@@ -1,11 +1,18 @@
+import asyncio
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
+from jarvis.services import vitals
 
 app = FastAPI()
 hub = ConnectionHub()
+
+@app.on_event("startup")
+async def _startup():
+    asyncio.create_task(vitals.run(hub))
 
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")
