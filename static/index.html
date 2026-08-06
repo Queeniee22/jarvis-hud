@@ -1,1 +1,88 @@
-<!doctype html><title>JARVIS</title><h1>JARVIS</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS HUD</title>
+<link rel="stylesheet" href="/css/hud.css">
+</head>
+<body>
+<div class="hud">
+  <div class="panel head">
+    <span class="logo">✿ JARVIS</span>
+    <span class="clock"><span id="clock">2026-08-06 · 2:32 PM</span> <span class="heart">♡</span></span>
+  </div>
+
+  <div class="rail left">
+    <div class="panel sys">
+      <h2>✿ SYSTEM</h2>
+      <div class="bar"><span class="lbl">CPU</span><div class="track"><div class="fill f1"></div></div><span class="pct">42%</span></div>
+      <div class="bar"><span class="lbl">RAM</span><div class="track"><div class="fill f2"></div></div><span class="pct">38%</span></div>
+      <div class="bar"><span class="lbl">DISK</span><div class="track"><div class="fill f3"></div></div><span class="pct">12%</span></div>
+    </div>
+    <div class="panel">
+      <h2>✿ TODAY</h2>
+      <ul>
+        <li><span class="dot"></span>9:00 &nbsp;Stand-up</li>
+        <li><span class="dot mint"></span>14:00 Interview ♡</li>
+        <li><span class="dot lil"></span>17:30 Gym</li>
+      </ul>
+    </div>
+    <div class="panel voice">
+      <div class="mic"><span class="micdot"></span>MIC ● &nbsp;listening…</div>
+      <div class="wave" id="wave"></div>
+    </div>
+  </div>
+
+  <div class="core">
+    <div class="tabs">
+      <div class="tab on" id="tabCore">✿ CORE</div>
+      <div class="tab" id="tabGraph">✿ GRAPH</div>
+    </div>
+    <div class="stage">
+      <div class="view" id="viewCore">
+        <span class="cap">CORE</span>
+        <span class="speakbadge" id="speakbadge">◆ SPEAKING</span>
+        <canvas id="orb" width="640" height="640"></canvas>
+        <div class="bignum">135,000<small>MEMORIES INDEXED</small></div>
+      </div>
+      <div class="view hide" id="viewGraph">
+        <div class="gstats">NODES: 902<br>LINKS: 3611<br>FPS: 60<br><span style="color:#B8E6C4">■ SIM STABLE</span></div>
+        <div class="gsearch"># search notes… or #tag</div>
+        <canvas id="graph" width="640" height="640"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="rail right">
+    <div class="panel">
+      <h2>✿ VAULT</h2>
+      <ul>
+        <li><span class="dot mint"></span>Projects: Jarvis</li>
+        <li><span class="dot"></span>Open threads: 3</li>
+        <li><span class="dot lil"></span>Last note: today</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2>✿ SKILLS</h2>
+      <ul>
+        <li><span class="dot lil"></span>voice · vitals</li>
+        <li><span class="dot mint"></span>vault · calendar</li>
+        <li><span class="dot"></span>7 online</li>
+      </ul>
+    </div>
+    <div class="panel chat">
+      <h2>✿ CHAT</h2>
+      <div class="msg"><span class="who j">JARVIS</span>Morning, Mackenzie ♡ Interview at 2 — want your notes?</div>
+      <div class="msg"><span class="who u">YOU</span>yes please</div>
+      <div class="prompt"><span class="who u">YOU</span><span class="caret"></span></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/core.js"></script>
+<script src="/js/graph.js"></script>
+<script src="/js/wave.js"></script>
+<script src="/js/hud.js"></script>
+</body>
+</html>
