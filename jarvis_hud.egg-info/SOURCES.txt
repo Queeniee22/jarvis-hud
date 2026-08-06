@@ -1,8 +1,0 @@
-pyproject.toml
-jarvis/__init__.py
-jarvis_hud.egg-info/PKG-INFO
-jarvis_hud.egg-info/SOURCES.txt
-jarvis_hud.egg-info/dependency_links.txt
-jarvis_hud.egg-info/requires.txt
-jarvis_hud.egg-info/top_level.txt
-tests/test_smoke.py

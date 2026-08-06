@@ -5,3 +5,4 @@ __pycache__/
 models/
 token.json
 credentials.json
+*.egg-info/
