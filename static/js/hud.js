@@ -26,7 +26,33 @@
     pcts[1].textContent = m.ram + "%";
     pcts[2].textContent = m.disk + "%";
   }
-  function applyChat(m){ /* Phase 3 */ }
+  const chatLog = document.getElementById('chatLog');
+  let currentJarvisLine = null;
+  function scrollChatBottom(){ if (chatLog) chatLog.scrollTop = chatLog.scrollHeight; }
+  function applyChat(m){
+    if (!chatLog) return;
+    if (m.role === 'you') {
+      const line = document.createElement('div');
+      line.className = 'msg';
+      line.innerHTML = '<span class="who u">YOU</span>';
+      line.appendChild(document.createTextNode(m.delta || ''));
+      chatLog.appendChild(line);
+      currentJarvisLine = null;
+      scrollChatBottom();
+    } else if (m.role === 'jarvis') {
+      if (!currentJarvisLine) {
+        currentJarvisLine = document.createElement('div');
+        currentJarvisLine.className = 'msg';
+        currentJarvisLine.innerHTML = '<span class="who j">JARVIS</span><span class="jtext"></span>';
+        chatLog.appendChild(currentJarvisLine);
+      }
+      if (m.delta) {
+        currentJarvisLine.querySelector('.jtext').textContent += m.delta;
+      }
+      scrollChatBottom();
+      if (m.done) currentJarvisLine = null;
+    }
+  }
   function applyVault(m){ /* Phase 6 */ }
   function applyCalendar(m){ /* Phase 7 */ }
   function applyStatus(m){ console.warn("service", m.service, m.state, m.detail||""); }
@@ -74,6 +100,19 @@
       window.renderGraph(state.graph!==null ? state.graph : currentGraphData);
     }
     requestAnimationFrame(frame);
+  }
+
+  const chatInput = document.getElementById('chatInput');
+  if (chatInput) {
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const value = chatInput.value.trim();
+        if (value) {
+          send({type:'say', text:value});
+          chatInput.value = '';
+        }
+      }
+    });
   }
 
   window.initCore();

@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
-from jarvis.services import vitals
+from jarvis.services import brain, vitals
 
 app = FastAPI()
 hub = ConnectionHub()
@@ -29,6 +29,20 @@ async def ws(sock: WebSocket):
     await sock.send_json({"type": "hello", "app": "jarvis"})
     try:
         while True:
-            await sock.receive_json()  # client messages handled in later phases
+            try:
+                msg = await sock.receive_json()
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                continue  # ignore malformed frames, keep the connection
+            if msg.get("type") == "say":
+                text = (msg.get("text") or "").strip()
+                if text:
+                    await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
+                    asyncio.create_task(brain.ask(hub, text))
+            elif msg.get("type") == "mute":
+                pass  # ears wired in Task 7
+            elif msg.get("type") == "tab":
+                pass  # purely client-side; ignore server-side
     except WebSocketDisconnect:
         hub.remove(sock)

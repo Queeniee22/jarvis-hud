@@ -75,10 +75,14 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
 .wave span{flex:1;background:linear-gradient(180deg,#F76A9A,#F7B7CE);border-radius:4px;
   box-shadow:0 0 7px #F76A9Aaa;height:20%;transition:height .07s linear;}
 .chat{display:flex;flex-direction:column;gap:8px;}
+.chatlog{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;}
 .msg{font-size:15px;line-height:1.5;}
 .who{font-family:"Press Start 2P";font-size:8px;margin-right:8px;}
 .j{color:var(--deep);} .u{color:#B87AA0;}
 .prompt{margin-top:4px;display:flex;align-items:center;gap:8px;background:#FCE9F2;
   border:1px solid var(--line);border-radius:10px;padding:8px 12px;}
 .caret{width:8px;height:18px;background:var(--blush);animation:blink 1s steps(1) infinite;}
+#chatInput{flex:1;background:transparent;border:none;outline:none;font-family:inherit;
+  font-size:15px;color:var(--deep);}
+#chatInput::placeholder{color:#B87AA0;opacity:.7;}
 .heart{color:var(--blush);}
