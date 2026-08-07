@@ -1,5 +1,9 @@
 import asyncio
+import logging
+
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 _muted = False
 
@@ -147,6 +151,9 @@ async def run(hub):
             except Exception:
                 text = ""
             if text:
-                await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
+                # Spoken turns stay out of the chat panel entirely -- no
+                # transcript of what you said, no text reply. Jarvis just
+                # answers out loud. Typed turns still show text.
+                log.info("ears: heard %r", text)
                 from jarvis.services import brain
-                asyncio.create_task(brain.ask(hub, text))
+                asyncio.create_task(brain.ask(hub, text, source="voice"))

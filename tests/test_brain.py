@@ -144,3 +144,57 @@ def test_ask_streams_deltas_and_closes(monkeypatch):
     assert reply == "hello"
     assert hub.messages[-1]["done"] is True
     assert not any(brain.ERROR_REPLY in m.get("delta", "") for m in hub.messages)
+
+
+class _Hub:
+    def __init__(self): self.msgs = []
+    async def broadcast(self, m): self.msgs.append(m)
+
+
+async def _run_ask(monkeypatch, source):
+    """Drive ask() with a fake `claude` that emits one assistant line."""
+    import jarvis.services.brain as b
+
+    line = b'{"type":"assistant","message":{"content":[{"type":"text","text":"hello there"}]}}\n'
+
+    class FakeStdout:
+        def __init__(self): self.lines = [line, b""]
+        async def readline(self): return self.lines.pop(0)
+
+    class FakeStderr:
+        async def read(self): return b""
+
+    class FakeProc:
+        returncode = 0
+        stdout = FakeStdout()
+        stderr = FakeStderr()
+        async def wait(self): return 0
+        def kill(self): pass
+
+    async def fake_exec(*a, **k): return FakeProc()
+
+    monkeypatch.setattr(b.asyncio, "create_subprocess_exec", fake_exec)
+    spoken = []
+    async def fake_speak(hub, text): spoken.append(text)
+    monkeypatch.setattr(b.voice, "speak", fake_speak)
+
+    hub = _Hub()
+    reply = await b.ask(hub, "hi", source=source)
+    await asyncio.sleep(0)  # let the fire-and-forget speak task run
+    return hub, reply, spoken
+
+
+async def test_voice_turn_writes_nothing_to_chat(monkeypatch):
+    hub, reply, spoken = await _run_ask(monkeypatch, "voice")
+    assert reply == "hello there"
+    assert [m for m in hub.msgs if m.get("type") == "chat"] == [], \
+        "a spoken turn must not put any text in the chat panel"
+    assert spoken == ["hello there"], "it must still answer out loud"
+
+
+async def test_typed_turn_still_streams_text(monkeypatch):
+    hub, reply, spoken = await _run_ask(monkeypatch, "text")
+    chat = [m for m in hub.msgs if m.get("type") == "chat"]
+    assert any(m.get("delta") == "hello there" for m in chat)
+    assert any(m.get("done") for m in chat)
+    assert spoken == ["hello there"]

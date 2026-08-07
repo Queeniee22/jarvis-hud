@@ -63,7 +63,21 @@ async def iter_lines(stream):
         yield raw.decode("utf-8", "ignore").strip()
 
 
-async def ask(hub, text: str):
+async def ask(hub, text: str, source: str = "text"):
+    """Ask Claude and stream the reply.
+
+    `source` is the modality the request arrived on, and it decides how the
+    answer comes back. A spoken question gets a spoken answer only: nothing
+    is written to the chat panel, so talking to Jarvis leaves no transcript
+    clutter. A typed question still streams text (and is also spoken).
+    """
+    voice_only = source == "voice"
+
+    async def emit(message):
+        """Chat-panel output, suppressed entirely for spoken turns."""
+        if not voice_only:
+            await hub.broadcast(message)
+
     reply = ""
     proc = None
     claude_path = shutil.which("claude") or "claude"
@@ -83,16 +97,21 @@ async def ask(hub, text: str):
             delta = parse_stream_line(line)
             if delta:
                 reply += delta
-                await hub.broadcast({"type": "chat", "role": "jarvis", "delta": delta, "done": False})
+                await emit({"type": "chat", "role": "jarvis", "delta": delta, "done": False})
 
         await proc.wait()
         stderr = (await stderr_task).decode("utf-8", "ignore").strip()
         if proc.returncode:
             log.error("brain: claude exited %s: %s", proc.returncode, stderr[-2000:])
             if not reply:
-                await hub.broadcast(
+                await emit(
                     {"type": "chat", "role": "jarvis", "delta": ERROR_REPLY, "done": False}
                 )
+                if voice_only:
+                    await hub.broadcast({
+                        "type": "status", "service": "brain", "state": "error",
+                        "detail": f"claude exited {proc.returncode}",
+                    })
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -101,11 +120,22 @@ async def ask(hub, text: str):
         log.exception("brain: ask failed")
         if proc is not None and proc.returncode is None:
             proc.kill()
-        await hub.broadcast(
+        await emit(
             {"type": "chat", "role": "jarvis", "delta": ERROR_REPLY, "done": False}
         )
+        if voice_only:
+            # Nothing was written to chat, so without this a failed spoken
+            # turn would be completely silent and invisible.
+            await hub.broadcast({
+                "type": "status", "service": "brain", "state": "error",
+                "detail": "ask failed",
+            })
     finally:
-        await hub.broadcast({"type": "chat", "role": "jarvis", "delta": "", "done": True})
+        await emit({"type": "chat", "role": "jarvis", "delta": "", "done": True})
         if reply:
             asyncio.create_task(voice.speak(hub, reply))
+        elif voice_only:
+            # A spoken turn writes nothing to the panel, so a failure with no
+            # reply would be pure silence. Say the error out loud instead.
+            asyncio.create_task(voice.speak(hub, ERROR_REPLY))
     return reply
