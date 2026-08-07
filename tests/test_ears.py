@@ -134,3 +134,23 @@ async def test_speech_then_pause_reaches_the_brain(monkeypatch):
     assert captured.get("text") == "hello jarvis"
     assert captured.get("source") == "voice"
     assert any(m.get("type") == "heard" for m in hub.msgs), "should show the heard caption"
+
+
+def test_hysteresis_keeps_a_quiet_syllable_inside_the_utterance():
+    """Regression: soft mid-sentence syllables fell under the single fixed
+    threshold and ended the turn early, cutting Mackenzie off."""
+    import numpy as np
+    # a dip that is clearly speech-adjacent, not room noise
+    dip = np.full(1600, 0.002, dtype="float32")
+    assert ears.has_speech(dip, ears.SPEECH_RMS_THRESHOLD) is False   # would end turn
+    assert ears.has_speech(dip, ears.CONTINUE_RMS_THRESHOLD) is True  # stays in turn
+
+
+def test_continue_threshold_still_rejects_room_noise():
+    import numpy as np
+    noise = np.full(1600, 0.0004, dtype="float32")
+    assert ears.has_speech(noise, ears.CONTINUE_RMS_THRESHOLD) is False
+
+
+def test_thresholds_ordered():
+    assert ears.CONTINUE_RMS_THRESHOLD < ears.SPEECH_RMS_THRESHOLD

@@ -23,6 +23,15 @@ def set_muted(v: bool):
 # ~0.0084. 0.003 sits ~7x above the noise floor and ~3x below normal
 # speech, so quiet or distant talking still registers.
 SPEECH_RMS_THRESHOLD = 0.003
+
+# Hysteresis. Speech has a wide dynamic range: soft syllables, trailing
+# word endings and breaths between phrases all dip well under the start
+# threshold, and a single fixed bar treated those dips as "he's finished"
+# and cut him off mid-sentence. Once talking has begun, it takes a much
+# quieter signal to count as a pause -- still comfortably above the ~0.0004
+# noise floor.
+CONTINUE_RMS_THRESHOLD = 0.0012
+
 _GATE_FRAME = 1600  # 0.1s at 16kHz
 
 
@@ -59,11 +68,13 @@ MIC_VIS_GAIN = 25.0
 # Utterance endpointing, in 0.1s blocks. The old loop transcribed on a fixed
 # 2s boundary, so it sat waiting even after you'd clearly stopped talking,
 # and could also slice a sentence in half. Now a pause ends the utterance.
-# 0.6s cut people off mid-sentence: normal speech has pauses that long while
-# you think. 1.5s is past a natural pause but still feels responsive.
-END_SILENCE_BLOCKS = 15     # 1.5s of quiet = you're done talking
+# 0.6s cut people off mid-sentence, and 1.5s still did. Paired with the
+# continue-threshold hysteresis above, 2.0s of genuine quiet is a real
+# end-of-turn rather than a thinking pause.
+END_SILENCE_BLOCKS = 20     # 2.0s of quiet = you're done talking
 PREROLL_BLOCKS = 3          # 0.3s kept before speech so the first syllable survives
-MAX_UTTERANCE_BLOCKS = 150  # 15s hard cap so a noisy room can't buffer forever
+# 15s cut off long sentences mid-flow. This is only a runaway backstop.
+MAX_UTTERANCE_BLOCKS = 300  # 30s hard cap
 
 
 def rms_level(block) -> float:
@@ -147,7 +158,10 @@ async def run(hub):
     silent_run = 0
     while True:
         block = await q.get()
-        block_has_speech = has_speech(block[:, 0])
+        # Hysteresis: once he's talking it takes a much quieter block to
+        # count as a pause, so soft syllables don't end the turn.
+        threshold = CONTINUE_RMS_THRESHOLD if speaking else SPEECH_RMS_THRESHOLD
+        block_has_speech = has_speech(block[:, 0], threshold)
 
         if block_has_speech:
             speaking = True
