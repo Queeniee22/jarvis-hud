@@ -41,9 +41,9 @@ async def run(hub, delay: float = 1.0):
         })
         # source="voice" so the greeting is spoken and leaves the chat panel
         # clean, matching how spoken turns behave everywhere else.
+        # Not a "heard" message: that caption means "what the mic picked up",
+        # and putting Jarvis's own greeting there reads like a mishearing.
         greeting = await brain.ask(hub, BOOT_PROMPT, source="voice")
-        if greeting:
-            await hub.broadcast({"type": "heard", "text": f"booted — {greeting[:80]}"})
         await hub.broadcast({
             "type": "status", "service": "boot", "state": "ready",
             "detail": "vault loaded",
