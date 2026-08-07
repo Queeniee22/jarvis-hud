@@ -5,6 +5,7 @@ def test_mute_toggle_default_unmuted():
     assert ears.is_muted() is False
     ears.set_muted(True)
     assert ears.is_muted() is True
+    ears.set_muted(False)  # global state: leaking True mutes later tests
 
 def test_rms_amplitude_normalized():
     import numpy as np
@@ -66,3 +67,69 @@ def test_single_block_speech_detection():
     silent_block = np.full(1600, 0.0004, dtype="float32")
     assert ears.has_speech(speech_block) is True
     assert ears.has_speech(silent_block) is False
+
+
+async def test_speech_then_pause_reaches_the_brain(monkeypatch):
+    """End-to-end through ears.run: an utterance followed by a pause must be
+    transcribed and handed to the brain.
+
+    Regression: the transcription block was once indented under a `continue`,
+    making it unreachable, so the mic worked and nothing ever responded.
+    """
+    import sys, types, asyncio as aio
+    import numpy as np
+
+    captured = {}
+
+    # fake whisper
+    class FakeModel:
+        def __init__(self, *a, **k): pass
+        def transcribe(self, audio, **k):
+            seg = types.SimpleNamespace(text="hello jarvis")
+            return [seg], None
+    fw = types.ModuleType("faster_whisper")
+    fw.WhisperModel = FakeModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fw)
+
+    # fake sounddevice whose stream feeds speech then silence
+    holder = {}
+    class FakeStream:
+        def __init__(self, **kw): holder["cb"] = kw["callback"]
+        def start(self): pass
+    sd = types.ModuleType("sounddevice")
+    sd.InputStream = FakeStream
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+
+    # capture the brain call
+    import jarvis.services.brain as brain_mod
+    async def fake_ask(hub, text, source="text"):
+        captured["text"] = text
+        captured["source"] = source
+    monkeypatch.setattr(brain_mod, "ask", fake_ask)
+
+    class Hub:
+        def __init__(self): self.msgs = []
+        async def broadcast(self, m): self.msgs.append(m)
+
+    ears.set_muted(False)
+    hub = Hub()
+    task = aio.create_task(ears.run(hub))
+    await aio.sleep(0.05)  # let run() reach the stream
+
+    speech = np.full((1600, 1), 0.02, dtype="float32")
+    silence = np.full((1600, 1), 0.0004, dtype="float32")
+    cb = holder["cb"]
+    for _ in range(8):
+        cb(speech, 1600, None, None)
+    for _ in range(ears.END_SILENCE_BLOCKS + 1):
+        cb(silence, 1600, None, None)
+
+    for _ in range(60):
+        await aio.sleep(0.02)
+        if "text" in captured:
+            break
+    task.cancel()
+
+    assert captured.get("text") == "hello jarvis"
+    assert captured.get("source") == "voice"
+    assert any(m.get("type") == "heard" for m in hub.msgs), "should show the heard caption"

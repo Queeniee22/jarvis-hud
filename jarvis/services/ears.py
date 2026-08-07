@@ -173,25 +173,26 @@ async def run(hub):
         if not has_speech(audio):
             continue
 
-            def _transcribe(audio=audio):
-                segments, _ = model.transcribe(
-                    audio, language="en", vad_filter=True
-                )
-                return " ".join(s.text for s in segments).strip()
+        def _transcribe(audio=audio):
+            segments, _ = model.transcribe(
+                audio, language="en", vad_filter=True
+            )
+            return " ".join(s.text for s in segments).strip()
 
-            try:
-                text = await loop.run_in_executor(None, _transcribe)
-            except Exception:
-                text = ""
-            if text:
-                # Spoken turns stay out of the chat panel entirely -- no
-                # transcript of what you said, no text reply. Jarvis just
-                # answers out loud. Typed turns still show text.
-                log.info("ears: heard %r", text)
-                # Its own message type, not a chat message: the HUD shows
-                # this as a brief fading caption under the waveform so a
-                # misheard phrase is visible, without putting a transcript
-                # in the chat panel.
-                await hub.broadcast({"type": "heard", "text": text})
-                from jarvis.services import brain
-                asyncio.create_task(brain.ask(hub, text, source="voice"))
+        try:
+            text = await loop.run_in_executor(None, _transcribe)
+        except Exception:
+            log.exception("ears: transcription failed")
+            text = ""
+        if text:
+            # Spoken turns stay out of the chat panel entirely -- no
+            # transcript of what you said, no text reply. Jarvis just
+            # answers out loud. Typed turns still show text.
+            log.info("ears: heard %r", text)
+            # Its own message type, not a chat message: the HUD shows
+            # this as a brief fading caption under the waveform so a
+            # misheard phrase is visible, without putting a transcript
+            # in the chat panel.
+            await hub.broadcast({"type": "heard", "text": text})
+            from jarvis.services import brain
+            asyncio.create_task(brain.ask(hub, text, source="voice"))
