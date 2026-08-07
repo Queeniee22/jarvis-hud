@@ -78,6 +78,12 @@ async def ask(hub, text: str, source: str = "text"):
         if not voice_only:
             await hub.broadcast(message)
 
+    if voice_only:
+        # Say something immediately. The CLI turn below takes ~5s of mostly
+        # fixed startup, so without a filler you'd get several seconds of
+        # silence and no sign it heard you.
+        asyncio.create_task(voice.speak_ack(hub))
+
     reply = ""
     proc = None
     claude_path = shutil.which("claude") or "claude"

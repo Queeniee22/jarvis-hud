@@ -66,3 +66,36 @@ async def test_playback_failure_reports_status_and_clears_sphere(monkeypatch):
     errors = [m for m in h.msgs if m.get("type") == "status" and m.get("state") == "error"]
     assert errors, "playback failure should broadcast an error status"
     assert h.msgs[-1] == {"type": "speak", "level": 0.0, "active": False}
+
+
+async def test_speak_ack_uses_cache_and_does_not_refetch(monkeypatch):
+    """The filler must play instantly; a TTS fetch mid-pause defeats it."""
+    import numpy as np
+    monkeypatch.setattr(voice.config, "ELEVENLABS_API_KEY", "abc")
+    monkeypatch.setattr(voice.config, "VOICE_ID", "xyz")
+    calls = []
+    def fake_fetch(text):
+        calls.append(text)
+        return np.zeros(1600, dtype="float32")
+    monkeypatch.setattr(voice, "_fetch_pcm", fake_fetch)
+    monkeypatch.setattr(voice, "_ack_cache", {}, raising=False)
+
+    played = []
+    async def fake_play(hub, pcm): played.append(pcm)
+    monkeypatch.setattr(voice, "_play", fake_play)
+
+    class Hub:
+        async def broadcast(self, m): pass
+
+    await voice.speak_ack(Hub())
+    assert len(calls) == 1 and len(played) == 1
+    # every subsequent ack for a cached phrase must hit the cache
+    for _ in range(len(voice.ACK_PHRASES) * 4):
+        await voice.speak_ack(Hub())
+    assert len(calls) <= len(voice.ACK_PHRASES), "acks should be cached, not refetched"
+
+
+async def test_ack_phrases_are_short(monkeypatch):
+    """Fillers must finish inside the brain's ~5s turn."""
+    for p in voice.ACK_PHRASES:
+        assert len(p.split()) <= 4, f"{p!r} is too long for a filler"

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 
 import numpy as np
 import requests
@@ -69,6 +70,79 @@ def _fetch_pcm(text: str) -> np.ndarray:
     return np.frombuffer(r.content, dtype=np.int16).astype("float32") / 32768.0
 
 
+# Spoken the moment a voice turn starts. Kept short so they finish well
+# inside the brain's ~5s turn and never collide with the real answer.
+ACK_PHRASES = [
+    "working on it, miss",
+    "thinking now",
+    "one moment, miss",
+    "on it",
+    "let me think",
+]
+
+_ack_cache = {}
+
+
+async def _prewarm_one(phrase: str):
+    if phrase in _ack_cache:
+        return
+    try:
+        _ack_cache[phrase] = await asyncio.to_thread(_fetch_pcm, phrase)
+    except Exception as e:
+        log.warning("voice: could not prewarm ack %r: %s", phrase, e)
+
+
+async def prewarm_acks():
+    """Synthesize the filler phrases once, at startup.
+
+    Without this the first acknowledgement pays a ~0.6s TTS fetch, which is
+    exactly the dead air it exists to cover.
+    """
+    if not available():
+        return
+    for phrase in ACK_PHRASES:
+        await _prewarm_one(phrase)
+    log.info("voice: prewarmed %d ack phrases", len(_ack_cache))
+
+
+async def speak_ack(hub):
+    """Say a short filler so a slow turn doesn't sound like it was ignored.
+
+    The Claude CLI needs ~5s per turn, almost all of it fixed startup cost
+    that can't be tuned away, so without this you talk and get silence and
+    wonder whether it heard you.
+    """
+    if not available():
+        return
+    phrase = random.choice(ACK_PHRASES)
+    if phrase not in _ack_cache:
+        await _prewarm_one(phrase)
+    pcm = _ack_cache.get(phrase)
+    if pcm is None:
+        return
+    await _play(hub, pcm)
+
+
+async def _play(hub, pcm):
+    """Play `pcm` and stream its amplitude so the core sphere reacts."""
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        await hub.broadcast({"type": "status", "service": "voice", "state": "offline", "detail": f"import: {e}"})
+        return
+    async with _lock:
+        try:
+            sd.play(pcm, SAMPLERATE)
+            for lvl in frame_levels(pcm, SAMPLERATE, FRAME_SEC):
+                await hub.broadcast({"type": "speak", "level": lvl, "active": True})
+                await asyncio.sleep(FRAME_SEC)
+        except Exception as e:
+            log.warning("voice: playback failed: %s", e)
+            await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
+        finally:
+            await hub.broadcast({"type": "speak", "level": 0.0, "active": False})
+
+
 async def speak(hub, text: str):
     if not available():
         await hub.broadcast({
@@ -83,23 +157,11 @@ async def speak(hub, text: str):
         await hub.broadcast({"type": "status", "service": "voice", "state": "offline", "detail": f"import: {e}"})
         return
 
-    async with _lock:
-        try:
-            pcm = await asyncio.to_thread(_fetch_pcm, text)
-        except Exception as e:
-            log.warning("voice: tts fetch failed: %s", e)
-            await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
-            return
+    try:
+        pcm = await asyncio.to_thread(_fetch_pcm, text)
+    except Exception as e:
+        log.warning("voice: tts fetch failed: %s", e)
+        await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
+        return
 
-        try:
-            sd.play(pcm, SAMPLERATE)
-            for lvl in frame_levels(pcm, SAMPLERATE, FRAME_SEC):
-                await hub.broadcast({"type": "speak", "level": lvl, "active": True})
-                await asyncio.sleep(FRAME_SEC)
-        except Exception as e:
-            # speak() is fired and forgotten by brain.ask(), so an escaping
-            # exception here would die silently in the task. Report it.
-            log.warning("voice: playback failed: %s", e)
-            await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
-        finally:
-            await hub.broadcast({"type": "speak", "level": 0.0, "active": False})
+    await _play(hub, pcm)
