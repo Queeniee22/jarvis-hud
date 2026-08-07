@@ -3,6 +3,8 @@ import json
 import logging
 import shutil
 
+from jarvis.services import voice
+
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
@@ -104,4 +106,6 @@ async def ask(hub, text: str):
         )
     finally:
         await hub.broadcast({"type": "chat", "role": "jarvis", "delta": "", "done": True})
+        if reply:
+            asyncio.create_task(voice.speak(hub, reply))
     return reply
