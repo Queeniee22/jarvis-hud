@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
-from jarvis.services import brain, vitals, ears, vault, voice
+from jarvis.services import brain, vitals, ears, vault, voice, boot
 
 app = FastAPI()
 hub = ConnectionHub()
@@ -18,6 +18,8 @@ async def _startup():
     # Synthesize the "thinking" fillers up front so the first one plays
     # instantly instead of paying a TTS fetch mid-pause.
     asyncio.create_task(voice.prewarm_acks())
+    # Session-start: read the vault, then greet (vault CLAUDE.md protocol).
+    asyncio.create_task(boot.run(hub))
 
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")

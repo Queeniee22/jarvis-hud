@@ -19,3 +19,8 @@ OBSIDIAN_PORT = int(os.getenv("OBSIDIAN_PORT", "27126"))
 # Local REST API plugin: HTTP on 27125, HTTPS (self-signed) on 27126.
 OBSIDIAN_SCHEME = "https" if OBSIDIAN_PORT == 27126 else "http"
 GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
+
+# The Obsidian vault. The brain subprocess runs with this as its cwd so the
+# Claude CLI picks up the vault's CLAUDE.md memory protocol and can read and
+# write notes with its own tools.
+VAULT_PATH = os.getenv("VAULT_PATH", r"C:\Users\Mackenzie\Jarvis")

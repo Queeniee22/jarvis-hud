@@ -198,3 +198,24 @@ async def test_typed_turn_still_streams_text(monkeypatch):
     assert any(m.get("delta") == "hello there" for m in chat)
     assert any(m.get("done") for m in chat)
     assert spoken == ["hello there"]
+
+
+def test_brain_runs_in_the_vault():
+    """The CLI must run inside the vault or it never sees CLAUDE.md."""
+    import os
+    from jarvis import config
+    import jarvis.services.brain as b
+    assert os.path.isfile(os.path.join(config.VAULT_PATH, "CLAUDE.md"))
+    assert "Bash" not in b.ALLOWED_TOOLS, "a voice assistant must not get a shell"
+    for t in ("Read", "Write", "Edit", "Grep"):
+        assert t in b.ALLOWED_TOOLS
+
+
+def test_session_id_parsed_and_reset():
+    import jarvis.services.brain as b
+    assert b.parse_session_id('{"type":"system","session_id":"abc-123"}') == "abc-123"
+    assert b.parse_session_id('{"type":"system"}') is None
+    assert b.parse_session_id("not json") is None
+    b._session_id = "abc"
+    b.reset_session()
+    assert b._session_id is None

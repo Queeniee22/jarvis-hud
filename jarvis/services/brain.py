@@ -3,14 +3,50 @@ import json
 import logging
 import shutil
 
+from jarvis import config
 from jarvis.services import voice
 
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are Jarvis, Mackenzie's cute, terse personal assistant. "
-    "Warm, direct, a little playful. Short answers; reasoning on request."
+    "Warm, direct, a little playful. Short answers; reasoning on request. "
+    "You are speaking aloud, so keep replies to a couple of sentences and "
+    "avoid markdown, bullet lists, code blocks, or anything that only makes "
+    "sense on screen. "
+    "Your working directory is Mackenzie's Obsidian vault and its CLAUDE.md "
+    "is your memory protocol -- follow it. Search the vault before saying you "
+    "don't know. When you learn something durable, write it to the right note: "
+    "corrections Mackenzie gives you go in the 'Observed preferences' section "
+    "of '01 Preferences/Working Style.md', problems and their real fixes go in "
+    "'02 Programming/Debug Log.md', and anything time-bound gets appended to "
+    "today's note in '05 Daily/'. Prefer updating an existing note over "
+    "creating a near-duplicate."
 )
+
+# File tools only. A voice assistant acting on a misheard phrase must not be
+# able to run shell commands, so Bash is deliberately withheld.
+ALLOWED_TOOLS = "Read,Write,Edit,Glob,Grep"
+
+# The CLI spawns fresh per turn, so without resuming a session every turn is
+# amnesiac -- it could not remember the previous sentence, let alone learn.
+_session_id = None
+
+
+def reset_session():
+    """Forget the conversation, so the next turn starts a fresh session."""
+    global _session_id
+    _session_id = None
+
+
+def parse_session_id(line: str):
+    """Pull the session id out of a stream-json line, if it carries one."""
+    try:
+        obj = json.loads(line)
+    except Exception:
+        return None
+    sid = obj.get("session_id")
+    return sid or None
 
 # asyncio's default StreamReader limit is 64KB, which a single stream-json
 # line clears easily. Raise it, but keep it bounded — an unbounded reader
@@ -88,10 +124,19 @@ async def ask(hub, text: str, source: str = "text"):
     proc = None
     claude_path = shutil.which("claude") or "claude"
     try:
+        global _session_id
+        args = [claude_path, "-p", text,
+                "--append-system-prompt", SYSTEM_PROMPT,
+                "--permission-mode", "acceptEdits",
+                "--allowedTools", ALLOWED_TOOLS,
+                "--output-format", "stream-json", "--verbose"]
+        if _session_id:
+            args += ["--resume", _session_id]
         proc = await asyncio.create_subprocess_exec(
-            claude_path, "-p", text,
-            "--append-system-prompt", SYSTEM_PROMPT,
-            "--output-format", "stream-json", "--verbose",
+            *args,
+            # Run inside the vault so the CLI loads its CLAUDE.md memory
+            # protocol and can read/write notes directly.
+            cwd=config.VAULT_PATH,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             limit=STREAM_LIMIT,
         )
@@ -100,6 +145,9 @@ async def ask(hub, text: str, source: str = "text"):
         stderr_task = asyncio.create_task(proc.stderr.read())
 
         async for line in iter_lines(proc.stdout):
+            sid = parse_session_id(line)
+            if sid:
+                _session_id = sid
             delta = parse_stream_line(line)
             if delta:
                 reply += delta
@@ -110,6 +158,11 @@ async def ask(hub, text: str, source: str = "text"):
         if proc.returncode:
             log.error("brain: claude exited %s: %s", proc.returncode, stderr[-2000:])
             if not reply:
+                # A resumed session that the CLI won't accept would fail every
+                # turn from here on. Drop it so the next turn starts clean.
+                if _session_id:
+                    log.warning("brain: dropping session %s after failure", _session_id)
+                    _session_id = None
                 await emit(
                     {"type": "chat", "role": "jarvis", "delta": ERROR_REPLY, "done": False}
                 )
