@@ -65,7 +65,22 @@
       if (m.done) currentJarvisLine = null;
     }
   }
-  function applyVault(m){ /* Phase 6 */ }
+  const dotClasses = ['mint','','lil','butter'];
+  function applyVault(m){
+    const list = document.getElementById('vaultList');
+    if (!list) return;
+    const projects = Array.isArray(m.projects) ? m.projects.join(', ') : (m.projects || '');
+    const threads = (typeof m.threads === 'number') ? m.threads : (m.threads || 0);
+    const lastNote = m.lastNote || '—';
+    const items = [
+      `Projects: ${projects || '—'}`,
+      `Open threads: ${threads}`,
+      `Last note: ${lastNote}`
+    ];
+    list.innerHTML = items.map((text, i) =>
+      `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${text}</li>`
+    ).join('');
+  }
   function applyCalendar(m){ /* Phase 7 */ }
   function applyStatus(m){ console.warn("service", m.service, m.state, m.detail||""); }
 
