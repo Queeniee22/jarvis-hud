@@ -31,7 +31,10 @@ def set_ptt(active: bool) -> bool:
     if active == _ptt:
         return False
     _ptt = active
+    log.info("ears: ptt %s (queue=%s muted=%s)",
+             "DOWN" if active else "UP", _q is not None, _muted)
     if _q is None or _loop is None:
+        log.warning("ears: ptt ignored -- capture loop not running")
         return True
     try:
         if active:

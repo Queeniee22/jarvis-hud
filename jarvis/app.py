@@ -25,6 +25,20 @@ app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")
 app.mount("/fonts", StaticFiles(directory=config.STATIC / "fonts"), name="fonts")
 
+@app.middleware("http")
+async def _no_cache(request, call_next):
+    """Never let the browser cache the HUD.
+
+    A stale cached hud.js silently keeps running the previous build -- which
+    looked exactly like "push-to-talk doesn't work" while the server side was
+    fine. Not worth caching a local single-user page.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.get("/")
 def index():
     return FileResponse(config.STATIC / "index.html")
