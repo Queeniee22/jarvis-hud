@@ -91,3 +91,22 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
   font-size:15px;color:var(--deep);}
 #chatInput::placeholder{color:#B87AA0;opacity:.7;}
 .heart{color:var(--blush);}
+
+/* Last thing the mic heard: a brief caption under the waveform. Voice turns
+   deliberately leave no chat transcript, so this is the only feedback that
+   a phrase was misheard -- it fades out rather than accumulating. */
+.heard{
+  margin-top:8px;
+  min-height:15px;
+  font-family:"Pixelify Sans",monospace;
+  font-size:13px;
+  color:var(--deep);
+  opacity:0;
+  transition:opacity .5s ease;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  letter-spacing:.3px;
+}
+.heard.show{opacity:.75;}
+.heard::before{content:"♡ ";color:var(--blush);}

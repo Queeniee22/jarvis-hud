@@ -50,3 +50,19 @@ def test_rms_level_makes_quiet_speech_visible():
     assert ears.rms_level(speech) > 0.15              # clearly visible
     assert ears.rms_level(noise) < 0.03               # stays flat
     assert ears.rms_level(np.full(1600, 0.05, dtype="float32")) == 1.0
+
+
+def test_endpoint_constants_are_sane():
+    """Endpointing must react well under a second but tolerate real pauses."""
+    assert 0.3 <= ears.END_SILENCE_BLOCKS * 0.1 <= 1.0
+    assert ears.PREROLL_BLOCKS >= 1
+    assert ears.MAX_UTTERANCE_BLOCKS * 0.1 >= 10
+
+
+def test_single_block_speech_detection():
+    """The endpointing loop gates per 0.1s block, not per 2s chunk."""
+    import numpy as np
+    speech_block = np.full(1600, 0.0084, dtype="float32")
+    silent_block = np.full(1600, 0.0004, dtype="float32")
+    assert ears.has_speech(speech_block) is True
+    assert ears.has_speech(silent_block) is False

@@ -13,6 +13,7 @@
     else if (m.type === "vault") applyVault(m);
     else if (m.type === "graph") state.graph = m;
     else if (m.type === "calendar") applyCalendar(m);
+    else if (m.type === "heard") applyHeard(m);
     else if (m.type === "status") applyStatus(m);
   };
   function send(obj){ if (ws.readyState===1) ws.send(JSON.stringify(obj)); }
@@ -82,6 +83,17 @@
     ).join('');
   }
   function applyCalendar(m){ /* Phase 7 */ }
+  let heardTimer = null;
+  function applyHeard(m){
+    const el = document.getElementById("heard");
+    if (!el || !m.text) return;
+    el.textContent = m.text;
+    el.classList.add("show");
+    clearTimeout(heardTimer);
+    // Long enough to read, short enough that it doesn't linger as clutter.
+    heardTimer = setTimeout(() => el.classList.remove("show"), 6000);
+  }
+
   function applyStatus(m){ console.warn("service", m.service, m.state, m.detail||""); }
 
   /* live clock, 12-hour am/pm */

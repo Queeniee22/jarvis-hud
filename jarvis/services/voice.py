@@ -8,7 +8,7 @@ from jarvis import config
 
 log = logging.getLogger(__name__)
 
-TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
 MODEL_ID = "eleven_turbo_v2_5"
 SAMPLERATE = 16000
 FRAME_SEC = 0.1
@@ -56,7 +56,13 @@ def _fetch_pcm(text: str) -> np.ndarray:
         url,
         headers={"xi-api-key": key, "accept": "audio/pcm"},
         params={"output_format": "pcm_16000"},
-        json={"text": text, "model_id": MODEL_ID},
+        json={
+            "text": text,
+            "model_id": MODEL_ID,
+            # Lowest-latency setting: ElevenLabs starts returning audio
+            # sooner at the cost of a little prosody smoothing.
+            "optimize_streaming_latency": 3,
+        },
         timeout=30,
     )
     r.raise_for_status()

@@ -54,6 +54,13 @@ def has_speech(audio, threshold: float = SPEECH_RMS_THRESHOLD) -> bool:
 # and loud speech (~0.04) to full height.
 MIC_VIS_GAIN = 25.0
 
+# Utterance endpointing, in 0.1s blocks. The old loop transcribed on a fixed
+# 2s boundary, so it sat waiting even after you'd clearly stopped talking,
+# and could also slice a sentence in half. Now a pause ends the utterance.
+END_SILENCE_BLOCKS = 6      # 0.6s of quiet = you're done talking
+PREROLL_BLOCKS = 3          # 0.3s kept before speech so the first syllable survives
+MAX_UTTERANCE_BLOCKS = 150  # 15s hard cap so a noisy room can't buffer forever
+
 
 def rms_level(block) -> float:
     rms = float(np.sqrt(np.mean(np.square(block))))
@@ -126,19 +133,45 @@ async def run(hub):
         return
 
     buffer = []
+    speaking = False
+    silent_run = 0
     while True:
         block = await q.get()
-        buffer.append(block)
-        if len(buffer) >= 20:  # ~2s at 1600-sample blocks
-            audio = np.concatenate(buffer)[:, 0]
-            buffer = []
+        block_has_speech = has_speech(block[:, 0])
 
-            # Silence gate: Whisper hallucinates on near-silent audio
-            # (classically "Thank you." / "you"), which would post phantom
-            # messages to the chat and wake the brain. Only transcribe a
-            # chunk that actually contains speech-level energy.
-            if not has_speech(audio):
-                continue
+        if block_has_speech:
+            speaking = True
+            silent_run = 0
+            buffer.append(block)
+        elif speaking:
+            # Keep trailing silence: it carries the tail of the last word
+            # and helps the transcriber close the utterance cleanly.
+            silent_run += 1
+            buffer.append(block)
+        else:
+            # Not talking yet. Hold a short pre-roll so the first syllable
+            # isn't clipped when speech does start.
+            buffer.append(block)
+            if len(buffer) > PREROLL_BLOCKS:
+                buffer.pop(0)
+            continue
+
+        utterance_over = silent_run >= END_SILENCE_BLOCKS
+        too_long = len(buffer) >= MAX_UTTERANCE_BLOCKS
+        if not (utterance_over or too_long):
+            continue
+
+        audio = np.concatenate(buffer)[:, 0]
+        buffer = []
+        speaking = False
+        silent_run = 0
+
+        # Silence gate: Whisper hallucinates on near-silent audio
+        # (classically "Thank you." / "you"), which would post phantom
+        # messages to the chat and wake the brain. Only transcribe a
+        # chunk that actually contains speech-level energy.
+        if not has_speech(audio):
+            continue
 
             def _transcribe(audio=audio):
                 segments, _ = model.transcribe(
@@ -155,5 +188,10 @@ async def run(hub):
                 # transcript of what you said, no text reply. Jarvis just
                 # answers out loud. Typed turns still show text.
                 log.info("ears: heard %r", text)
+                # Its own message type, not a chat message: the HUD shows
+                # this as a brief fading caption under the waveform so a
+                # misheard phrase is visible, without putting a transcript
+                # in the chat panel.
+                await hub.broadcast({"type": "heard", "text": text})
                 from jarvis.services import brain
                 asyncio.create_task(brain.ask(hub, text, source="voice"))
