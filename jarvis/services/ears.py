@@ -13,6 +13,21 @@ def set_muted(v: bool):
     _muted = v
 
 
+SPEECH_RMS_THRESHOLD = 0.01
+
+
+def has_speech(audio, threshold: float = SPEECH_RMS_THRESHOLD) -> bool:
+    """True if `audio` carries speech-level energy, not just room noise.
+
+    Guards the transcriber: faster-whisper asked to transcribe silence
+    reliably invents short phrases, which would otherwise be posted to the
+    chat as if the user had said them.
+    """
+    if len(audio) == 0:
+        return False
+    return float(np.sqrt(np.mean(np.square(audio)))) >= threshold
+
+
 def rms_level(block) -> float:
     rms = float(np.sqrt(np.mean(np.square(block))))
     return max(0.0, min(1.0, rms * 3.0))
@@ -91,8 +106,17 @@ async def run(hub):
             audio = np.concatenate(buffer)[:, 0]
             buffer = []
 
+            # Silence gate: Whisper hallucinates on near-silent audio
+            # (classically "Thank you." / "you"), which would post phantom
+            # messages to the chat and wake the brain. Only transcribe a
+            # chunk that actually contains speech-level energy.
+            if not has_speech(audio):
+                continue
+
             def _transcribe(audio=audio):
-                segments, _ = model.transcribe(audio, language="en")
+                segments, _ = model.transcribe(
+                    audio, language="en", vad_filter=True
+                )
                 return " ".join(s.text for s in segments).strip()
 
             try:
