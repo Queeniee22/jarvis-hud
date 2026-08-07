@@ -39,3 +39,14 @@ def test_has_speech_accepts_quiet_mic_with_pauses():
     chunk[:int(0.4 * sr)] = (np.random.randn(int(0.4 * sr)) * 0.015).astype("float32")
     assert float(np.sqrt(np.mean(chunk ** 2))) < 0.01  # mean would fail
     assert ears.has_speech(chunk) is True               # peak-frame passes
+
+
+def test_rms_level_makes_quiet_speech_visible():
+    """Regression: gain of 3 rendered this mic's speech at ~2.5% bar height,
+    so the waveform looked dead while the mic worked."""
+    import numpy as np
+    speech = np.full(1600, 0.0084, dtype="float32")   # measured speech RMS
+    noise = np.full(1600, 0.0004, dtype="float32")    # measured room noise
+    assert ears.rms_level(speech) > 0.15              # clearly visible
+    assert ears.rms_level(noise) < 0.03               # stays flat
+    assert ears.rms_level(np.full(1600, 0.05, dtype="float32")) == 1.0

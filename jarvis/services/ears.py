@@ -13,7 +13,10 @@ def set_muted(v: bool):
     _muted = v
 
 
-SPEECH_RMS_THRESHOLD = 0.006
+# Measured on Mackenzie's Fifine: room noise ~0.0004, speech peak-frame
+# ~0.0084. 0.003 sits ~7x above the noise floor and ~3x below normal
+# speech, so quiet or distant talking still registers.
+SPEECH_RMS_THRESHOLD = 0.003
 _GATE_FRAME = 1600  # 0.1s at 16kHz
 
 
@@ -40,9 +43,17 @@ def has_speech(audio, threshold: float = SPEECH_RMS_THRESHOLD) -> bool:
     return peak >= threshold
 
 
+# Visual gain for the pink waveform. A gain of 3 was calibrated for a hot
+# mic; on Mackenzie's Fifine, speech RMS ~0.0084 rendered bars at 2.5%
+# height -- the visualizer looked dead while the mic was in fact working.
+# 25 maps her room noise (~0.0004) to a flat ~1%, normal speech to ~20%,
+# and loud speech (~0.04) to full height.
+MIC_VIS_GAIN = 25.0
+
+
 def rms_level(block) -> float:
     rms = float(np.sqrt(np.mean(np.square(block))))
-    return max(0.0, min(1.0, rms * 3.0))
+    return max(0.0, min(1.0, rms * MIC_VIS_GAIN))
 
 
 _mic_broadcast_task = None
