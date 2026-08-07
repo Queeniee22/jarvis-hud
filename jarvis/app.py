@@ -48,7 +48,14 @@ async def ws(sock: WebSocket):
                     await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
                     asyncio.create_task(brain.ask(hub, text))
             elif msg.get("type") == "mute":
-                ears.set_muted(bool(msg.get("value")))
+                if voice.is_speaking():
+                    # Barge-in: pressing the button while Jarvis is talking
+                    # cuts him off rather than toggling the mic, so you can
+                    # interrupt instead of waiting him out.
+                    voice.stop_speaking()
+                    await hub.broadcast({"type": "speak", "level": 0.0, "active": False})
+                else:
+                    ears.set_muted(bool(msg.get("value")))
             elif msg.get("type") == "tab":
                 pass  # purely client-side; ignore server-side
     except WebSocketDisconnect:

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import time
 
 import numpy as np
 import requests
@@ -19,6 +20,31 @@ FRAME_SEC = 0.1
 # in order; queueing is simpler and avoids a race where an old call's
 # trailing "inactive" broadcast could stomp a new call's "active" frames.
 _lock = asyncio.Lock()
+
+# Half-duplex. There is no echo cancellation, so while Jarvis is talking the
+# mic would hear Jarvis and feed his own words back into the transcriber.
+# Capture is suppressed for the duration, plus a short tail for the speaker
+# ringing out.
+SPEAK_TAIL_SEC = 0.4
+_speaking = False
+_speaking_until = 0.0
+
+
+def is_speaking() -> bool:
+    """True while Jarvis is audible, including the post-speech tail."""
+    return _speaking or time.monotonic() < _speaking_until
+
+
+def stop_speaking():
+    """Cut playback off mid-sentence so Mackenzie can interrupt."""
+    global _speaking, _speaking_until
+    try:
+        import sounddevice as sd
+        sd.stop()
+    except Exception:
+        pass
+    _speaking = False
+    _speaking_until = 0.0
 
 
 def available() -> bool:
@@ -130,16 +156,22 @@ async def _play(hub, pcm):
     except Exception as e:
         await hub.broadcast({"type": "status", "service": "voice", "state": "offline", "detail": f"import: {e}"})
         return
+    global _speaking, _speaking_until
     async with _lock:
         try:
+            _speaking = True
             sd.play(pcm, SAMPLERATE)
             for lvl in frame_levels(pcm, SAMPLERATE, FRAME_SEC):
+                if not _speaking:
+                    break  # interrupted -- stop streaming amplitude too
                 await hub.broadcast({"type": "speak", "level": lvl, "active": True})
                 await asyncio.sleep(FRAME_SEC)
         except Exception as e:
             log.warning("voice: playback failed: %s", e)
             await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
         finally:
+            _speaking = False
+            _speaking_until = time.monotonic() + SPEAK_TAIL_SEC
             await hub.broadcast({"type": "speak", "level": 0.0, "active": False})
 
 

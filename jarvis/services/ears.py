@@ -3,6 +3,8 @@ import logging
 
 import numpy as np
 
+from jarvis.services import voice
+
 log = logging.getLogger(__name__)
 
 _muted = False
@@ -57,7 +59,9 @@ MIC_VIS_GAIN = 25.0
 # Utterance endpointing, in 0.1s blocks. The old loop transcribed on a fixed
 # 2s boundary, so it sat waiting even after you'd clearly stopped talking,
 # and could also slice a sentence in half. Now a pause ends the utterance.
-END_SILENCE_BLOCKS = 6      # 0.6s of quiet = you're done talking
+# 0.6s cut people off mid-sentence: normal speech has pauses that long while
+# you think. 1.5s is past a natural pause but still feels responsive.
+END_SILENCE_BLOCKS = 15     # 1.5s of quiet = you're done talking
 PREROLL_BLOCKS = 3          # 0.3s kept before speech so the first syllable survives
 MAX_UTTERANCE_BLOCKS = 150  # 15s hard cap so a noisy room can't buffer forever
 
@@ -120,9 +124,15 @@ async def run(hub):
         q.put_nowait(block)
 
     def cb(indata, frames, t, status):
-        lvl = 0.0 if _muted else rms_level(indata[:, 0])
-        _schedule_mic(loop, hub, {"type": "mic", "level": lvl, "muted": _muted})
-        if not _muted:
+        # Half-duplex: while Jarvis is audible the mic would capture his own
+        # voice and feed it back as if Mackenzie had said it.
+        gated = _muted or voice.is_speaking()
+        lvl = 0.0 if gated else rms_level(indata[:, 0])
+        _schedule_mic(loop, hub, {
+            "type": "mic", "level": lvl, "muted": _muted,
+            "gated": bool(voice.is_speaking()),
+        })
+        if not gated:
             loop.call_soon_threadsafe(_enqueue, indata.copy())
 
     try:

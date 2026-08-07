@@ -99,3 +99,23 @@ async def test_ack_phrases_are_short(monkeypatch):
     """Fillers must finish inside the brain's ~5s turn."""
     for p in voice.ACK_PHRASES:
         assert len(p.split()) <= 4, f"{p!r} is too long for a filler"
+
+
+def test_half_duplex_gate_and_barge_in(monkeypatch):
+    """Mic must be held while Jarvis is audible, and release on interrupt."""
+    import time as _t
+    voice._speaking = False
+    voice._speaking_until = 0.0
+    assert voice.is_speaking() is False
+
+    voice._speaking = True
+    assert voice.is_speaking() is True, "mic must be gated while speaking"
+
+    # tail keeps the gate closed briefly after playback ends
+    voice._speaking = False
+    voice._speaking_until = _t.monotonic() + 5
+    assert voice.is_speaking() is True, "tail should cover speaker ring-out"
+
+    # barge-in clears everything immediately
+    voice.stop_speaking()
+    assert voice.is_speaking() is False, "interrupt must reopen the mic at once"

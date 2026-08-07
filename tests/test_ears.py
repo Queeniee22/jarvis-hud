@@ -54,8 +54,9 @@ def test_rms_level_makes_quiet_speech_visible():
 
 
 def test_endpoint_constants_are_sane():
-    """Endpointing must react well under a second but tolerate real pauses."""
-    assert 0.3 <= ears.END_SILENCE_BLOCKS * 0.1 <= 1.0
+    """Must tolerate a real mid-sentence pause (0.6s cut Mackenzie off) but
+    still respond without a long dead wait."""
+    assert 1.2 <= ears.END_SILENCE_BLOCKS * 0.1 <= 2.5
     assert ears.PREROLL_BLOCKS >= 1
     assert ears.MAX_UTTERANCE_BLOCKS * 0.1 >= 10
 

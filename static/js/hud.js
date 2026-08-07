@@ -7,7 +7,13 @@
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type === "vitals") applyVitals(m);
-    else if (m.type === "mic") { state.mic = m; window.setMic(m.level, m.muted); updateMuteBtn(); }
+    else if (m.type === "mic") {
+      state.mic = m;
+      window.setMic(m.level, m.muted || m.gated);
+      updateMuteBtn();
+      const mic = document.querySelector(".mic");
+      if (mic) mic.classList.toggle("gated", !!m.gated && !m.muted);
+    }
     else if (m.type === "speak") { speakFromServer = true; state.speak = m.active ? m.level : 0; }
     else if (m.type === "chat") applyChat(m);
     else if (m.type === "vault") applyVault(m);

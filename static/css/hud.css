@@ -110,3 +110,8 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
 }
 .heard.show{opacity:.75;}
 .heard::before{content:"♡ ";color:var(--blush);}
+
+/* Mic held while Jarvis is talking (half-duplex, no echo cancellation).
+   Distinct from user-mute: this one clears on its own. */
+.mic.gated{opacity:.55;}
+.mic.gated .micdot{background:var(--lilac);box-shadow:0 0 8px var(--lilac);animation:none;}
