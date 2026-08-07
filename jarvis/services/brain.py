@@ -33,6 +33,13 @@ SYSTEM_PROMPT = (
     "change it when he asks you to improve yourself. Editing your own code "
     "does not take effect until he restarts you, so say so when you do it, "
     "and never leave your own code in a state that won't start. "
+    "When you need him to choose between concrete options -- including when "
+    "you are asking permission to run a command -- ask it in your spoken "
+    "reply AND add a final line in exactly this form:\n"
+    "ASK: <the question> :: <option one> :: <option two> :: <option three>\n"
+    "Use 2 to 4 short options of a few words each. That line becomes buttons "
+    "he can click, so never read it aloud or mention its format, and only "
+    "use it for a real choice -- not for open questions. "
     "BEFORE running any shell command -- including tests and git -- say out "
     "loud what you intend to run and wait for Mackenzie to agree. Never run "
     "one unasked. If a command is refused, tell him what it was rather than "
@@ -65,6 +72,34 @@ def reset_session():
     """Forget the conversation, so the next turn starts a fresh session."""
     global _session_id
     _session_id = None
+
+
+ASK_PREFIX = "ASK:"
+ASK_SEP = "::"
+
+
+def parse_ask(reply: str):
+    """Split a reply into spoken text and a clickable choice, if it has one.
+
+    Jarvis marks a multiple-choice question with a final line like:
+        ASK: Which approach? :: Rewrite it :: Patch it :: Leave it
+
+    Returns (spoken_text, question, [options]). The marker line never reaches
+    the speaker -- reading "colon colon" aloud would be absurd.
+    """
+    if not reply:
+        return reply, None, []
+    kept, question, options = [], None, []
+    for line in reply.splitlines():
+        stripped = line.strip()
+        if question is None and stripped.upper().startswith(ASK_PREFIX):
+            parts = [p.strip() for p in stripped[len(ASK_PREFIX):].split(ASK_SEP)]
+            parts = [p for p in parts if p]
+            if len(parts) >= 2:
+                question, options = parts[0], parts[1:]
+                continue  # drop the marker from the spoken text
+        kept.append(line)
+    return "\n".join(kept).strip(), question, options
 
 
 def parse_session_id(line: str):
@@ -221,8 +256,15 @@ async def ask(hub, text: str, source: str = "text"):
             })
     finally:
         await emit({"type": "chat", "role": "jarvis", "delta": "", "done": True})
-        if reply:
-            asyncio.create_task(voice.speak(hub, reply))
+        spoken, question, options = parse_ask(reply)
+        if question:
+            # Render clickable cards in the HUD so Mackenzie can answer with
+            # a click instead of having to say the option back.
+            await hub.broadcast({
+                "type": "ask", "question": question, "options": options,
+            })
+        if spoken:
+            asyncio.create_task(voice.speak(hub, spoken))
         elif voice_only:
             # A spoken turn writes nothing to the panel, so a failure with no
             # reply would be pure silence. Say the error out loud instead.

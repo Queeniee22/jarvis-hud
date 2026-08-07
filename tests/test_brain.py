@@ -248,3 +248,34 @@ def test_extra_dirs_cover_home_and_self_but_not_drive_root():
     assert "C:\\\\" not in [d.strip() for d in config.EXTRA_DIRS]
     assert "C:\\" not in [d.strip() for d in config.EXTRA_DIRS], \
         "drive root would expose Windows system files"
+
+
+def test_parse_ask_extracts_question_and_options():
+    import jarvis.services.brain as b
+    reply = "Sure. Do you want me to rewrite it or patch it?\nASK: Which approach? :: Rewrite it :: Patch it"
+    spoken, q, opts = b.parse_ask(reply)
+    assert q == "Which approach?"
+    assert opts == ["Rewrite it", "Patch it"]
+    assert "ASK:" not in spoken, "the marker must never be spoken aloud"
+    assert spoken == "Sure. Do you want me to rewrite it or patch it?"
+
+
+def test_parse_ask_ignores_replies_without_a_choice():
+    import jarvis.services.brain as b
+    spoken, q, opts = b.parse_ask("Done, that's fixed.")
+    assert (q, opts) == (None, [])
+    assert spoken == "Done, that's fixed."
+
+
+def test_parse_ask_needs_at_least_two_options():
+    import jarvis.services.brain as b
+    spoken, q, opts = b.parse_ask("ASK: Just one thing?")
+    assert q is None, "a single option is not a choice"
+    assert "ASK:" in spoken
+
+
+def test_parse_ask_handles_three_options_and_blank_reply():
+    import jarvis.services.brain as b
+    _, q, opts = b.parse_ask("ASK: Pick :: a :: b :: c")
+    assert opts == ["a", "b", "c"]
+    assert b.parse_ask("") == ("", None, [])

@@ -121,3 +121,30 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
 body.talking .panel.voice{border-color:var(--blush);box-shadow:0 0 18px #F76A9A88;}
 body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:blink .7s infinite;}
 #muteBtn.active{background:linear-gradient(180deg,#F76A9A,#F7B7CE);color:#fff;border-color:#F76A9A;}
+
+/* Clickable option cards, so a question can be answered with a click or a
+   number key instead of having to say the option back. */
+.askbox{
+  position:absolute; left:5%; right:5%; bottom:70px; z-index:5;
+  background:#2C1A30ee; border:2px solid var(--blush); border-radius:14px;
+  padding:14px 16px; box-shadow:0 0 22px #F76A9A66;
+}
+.askbox.hide{display:none;}
+.askq{
+  font-family:"Press Start 2P"; font-size:9px; line-height:1.7;
+  color:#F7B7CE; margin-bottom:12px; text-shadow:0 0 8px #F76A9A88;
+}
+.askrow{display:flex; flex-wrap:wrap; gap:8px;}
+.askopt{
+  flex:1 1 140px; display:flex; align-items:center; gap:8px;
+  font-family:"Pixelify Sans"; font-size:15px; text-align:left;
+  color:#3A2440; background:linear-gradient(180deg,#F9D5E5,#F7B7CE);
+  border:2px solid #F76A9A; border-radius:10px; padding:9px 12px;
+  cursor:pointer; transition:transform .08s ease, box-shadow .15s ease;
+}
+.askopt:hover{transform:translateY(-2px); box-shadow:0 0 14px #F76A9A99;}
+.askopt:active{transform:translateY(0);}
+.asknum{
+  font-family:"Press Start 2P"; font-size:8px; color:#fff;
+  background:#F76A9A; border-radius:5px; padding:4px 5px; flex:none;
+}

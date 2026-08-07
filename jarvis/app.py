@@ -61,6 +61,13 @@ async def ws(sock: WebSocket):
                 if text:
                     await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
                     asyncio.create_task(brain.ask(hub, text))
+            elif msg.get("type") == "choice":
+                # An option card was clicked. Continue the spoken conversation
+                # as if he had said it, so the answer comes back by voice.
+                picked = (msg.get("text") or "").strip()
+                if picked:
+                    await hub.broadcast({"type": "heard", "text": picked})
+                    asyncio.create_task(brain.ask(hub, picked, source="voice"))
             elif msg.get("type") == "ptt":
                 active = bool(msg.get("value"))
                 if active and voice.is_speaking():

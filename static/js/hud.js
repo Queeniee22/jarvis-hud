@@ -19,6 +19,7 @@
     else if (m.type === "vault") applyVault(m);
     else if (m.type === "graph") state.graph = m;
     else if (m.type === "calendar") applyCalendar(m);
+    else if (m.type === "ask") applyAsk(m);
     else if (m.type === "heard") applyHeard(m);
     else if (m.type === "status") applyStatus(m);
   };
@@ -115,6 +116,44 @@
     ).join('');
   }
   function applyCalendar(m){ /* Phase 7 */ }
+  /* clickable option cards -- answering by click instead of speaking */
+  function clearAsk(){
+    const box = document.getElementById('askBox');
+    if (box) { box.classList.add('hide'); box.innerHTML = ''; }
+  }
+  function applyAsk(m){
+    const box = document.getElementById('askBox');
+    if (!box || !m.question || !Array.isArray(m.options) || !m.options.length) return;
+    box.innerHTML = '';
+    const q = document.createElement('div');
+    q.className = 'askq';
+    q.textContent = m.question;
+    box.appendChild(q);
+    const row = document.createElement('div');
+    row.className = 'askrow';
+    m.options.forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.className = 'askopt';
+      b.innerHTML = '<span class="asknum">' + (i + 1) + '</span>';
+      b.appendChild(document.createTextNode(opt));
+      b.addEventListener('click', () => { send({type:'choice', text: opt}); clearAsk(); });
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+    box.classList.remove('hide');
+  }
+  // number keys pick an option without reaching for the mouse
+  window.addEventListener('keydown', (e) => {
+    const box = document.getElementById('askBox');
+    if (!box || box.classList.contains('hide')) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 9) {
+      const btn = box.querySelectorAll('.askopt')[n - 1];
+      if (btn) { e.preventDefault(); btn.click(); }
+    }
+  });
+
   let heardTimer = null;
   function applyHeard(m){
     const el = document.getElementById("heard");
@@ -185,6 +224,9 @@
       }
     });
   }
+
+  // Debug handle: lets the UI be exercised without a live conversation.
+  window.__hud = { applyAsk, clearAsk, applyHeard, send };
 
   window.initCore();
   window.initGraph();
