@@ -27,12 +27,34 @@ SYSTEM_PROMPT = (
     "'02 Programming/Debug Log.md', and anything time-bound gets appended to "
     "today's note in '05 Daily/'. Prefer updating an existing note over "
     "creating a near-duplicate. Don't announce that you wrote a note unless "
-    "he asks."
+    "he asks. "
+    "You can read and edit Mackenzie's files under C:\\Users\\Mackenzie, and "
+    "your own source code lives in C:\\Users\\Mackenzie\\jarvis-hud -- you may "
+    "change it when he asks you to improve yourself. Editing your own code "
+    "does not take effect until he restarts you, so say so when you do it, "
+    "and never leave your own code in a state that won't start. "
+    "BEFORE running any shell command -- including tests and git -- say out "
+    "loud what you intend to run and wait for Mackenzie to agree. Never run "
+    "one unasked. If a command is refused, tell him what it was rather than "
+    "trying a different way around it."
 )
 
-# File tools only. A voice assistant acting on a misheard phrase must not be
-# able to run shell commands, so Bash is deliberately withheld.
-ALLOWED_TOOLS = "Read,Write,Edit,Glob,Grep"
+# Shell access is an explicit allowlist, not a blanket grant. Headless mode
+# has no way to raise an interactive permission prompt mid-turn, so this list
+# IS the enforcement: anything not matched here is refused by the CLI. A
+# misheard "delete the old files" cannot reach rm, del, format, or git push
+# no matter how the model interprets it. The system prompt separately
+# requires Jarvis to ask before running any of these.
+_SAFE_BASH = [
+    "Bash(pytest:*)",
+    "Bash(python -m pytest:*)",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git add:*)",
+    "Bash(git commit:*)",
+]
+ALLOWED_TOOLS = ",".join(["Read", "Write", "Edit", "Glob", "Grep"] + _SAFE_BASH)
 
 # The CLI spawns fresh per turn, so without resuming a session every turn is
 # amnesiac -- it could not remember the previous sentence, let alone learn.
@@ -136,6 +158,8 @@ async def ask(hub, text: str, source: str = "text"):
                 "--permission-mode", "acceptEdits",
                 "--allowedTools", ALLOWED_TOOLS,
                 "--output-format", "stream-json", "--verbose"]
+        for extra in config.EXTRA_DIRS:
+            args += ["--add-dir", extra]
         if _session_id:
             args += ["--resume", _session_id]
         proc = await asyncio.create_subprocess_exec(

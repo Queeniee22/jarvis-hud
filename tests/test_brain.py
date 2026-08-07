@@ -206,7 +206,9 @@ def test_brain_runs_in_the_vault():
     from jarvis import config
     import jarvis.services.brain as b
     assert os.path.isfile(os.path.join(config.VAULT_PATH, "CLAUDE.md"))
-    assert "Bash" not in b.ALLOWED_TOOLS, "a voice assistant must not get a shell"
+    # Policy changed deliberately: a shell is allowed, but only as a
+    # command-by-command allowlist -- never an unrestricted grant.
+    assert "Bash(" in b.ALLOWED_TOOLS, "restricted shell access is expected"
     for t in ("Read", "Write", "Edit", "Grep"):
         assert t in b.ALLOWED_TOOLS
 
@@ -219,3 +221,30 @@ def test_session_id_parsed_and_reset():
     b._session_id = "abc"
     b.reset_session()
     assert b._session_id is None
+
+
+def test_destructive_shell_commands_are_not_allowlisted():
+    """Headless mode can't prompt, so the allowlist IS the enforcement.
+    A misheard phrase must not be able to reach a destructive command."""
+    import jarvis.services.brain as b
+    for danger in ("Bash(rm", "Bash(del", "Bash(format", "Bash(git push",
+                   "Bash(shutdown", "Bash(curl", "Bash(*)"):
+        assert danger not in b.ALLOWED_TOOLS, danger
+    # a bare unrestricted Bash grant would defeat the whole allowlist
+    assert ",Bash," not in "," + b.ALLOWED_TOOLS + ","
+
+
+def test_safe_shell_commands_are_allowlisted():
+    import jarvis.services.brain as b
+    for ok in ("Bash(pytest:*)", "Bash(git status:*)", "Bash(git diff:*)"):
+        assert ok in b.ALLOWED_TOOLS, ok
+
+
+def test_extra_dirs_cover_home_and_self_but_not_drive_root():
+    from jarvis import config
+    joined = " ".join(config.EXTRA_DIRS)
+    assert "jarvis-hud" in joined, "must be able to edit its own code"
+    assert r"C:\Users\Mackenzie" in joined, "must reach Mackenzie's files"
+    assert "C:\\\\" not in [d.strip() for d in config.EXTRA_DIRS]
+    assert "C:\\" not in [d.strip() for d in config.EXTRA_DIRS], \
+        "drive root would expose Windows system files"

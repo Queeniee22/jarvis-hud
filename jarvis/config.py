@@ -24,3 +24,11 @@ GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 # Claude CLI picks up the vault's CLAUDE.md memory protocol and can read and
 # write notes with its own tools.
 VAULT_PATH = os.getenv("VAULT_PATH", r"C:\Users\Mackenzie\Jarvis")
+
+# Directories Jarvis may read and edit beyond the vault: Mackenzie's own
+# files, and its own source so it can improve itself. Deliberately NOT the
+# C:\ root -- Windows system files and Program Files stay out of reach of a
+# voice assistant acting on speech that can be misheard.
+HOME_PATH = os.getenv("HOME_PATH", r"C:\Users\Mackenzie")
+SELF_PATH = os.getenv("SELF_PATH", str(ROOT))
+EXTRA_DIRS = [HOME_PATH, SELF_PATH]
