@@ -13,7 +13,8 @@ def set_muted(v: bool):
     _muted = v
 
 
-SPEECH_RMS_THRESHOLD = 0.01
+SPEECH_RMS_THRESHOLD = 0.006
+_GATE_FRAME = 1600  # 0.1s at 16kHz
 
 
 def has_speech(audio, threshold: float = SPEECH_RMS_THRESHOLD) -> bool:
@@ -22,10 +23,21 @@ def has_speech(audio, threshold: float = SPEECH_RMS_THRESHOLD) -> bool:
     Guards the transcriber: faster-whisper asked to transcribe silence
     reliably invents short phrases, which would otherwise be posted to the
     chat as if the user had said them.
+
+    Measured on the LOUDEST 0.1s frame rather than the mean over the whole
+    chunk. A chunk is ~2s and normal speech leaves most of it near-silent,
+    so a mean would dilute real words below the threshold on a quiet mic
+    and discard them.
     """
     if len(audio) == 0:
         return False
-    return float(np.sqrt(np.mean(np.square(audio)))) >= threshold
+    peak = 0.0
+    for start in range(0, len(audio), _GATE_FRAME):
+        frame = audio[start:start + _GATE_FRAME]
+        if len(frame) == 0:
+            continue
+        peak = max(peak, float(np.sqrt(np.mean(np.square(frame)))))
+    return peak >= threshold
 
 
 def rms_level(block) -> float:
