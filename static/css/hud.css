@@ -115,3 +115,9 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
    Distinct from user-mute: this one clears on its own. */
 .mic.gated{opacity:.55;}
 .mic.gated .micdot{background:var(--lilac);box-shadow:0 0 8px var(--lilac);animation:none;}
+
+/* Push-to-talk: the whole panel lifts while the key is held, so it's obvious
+   at a glance that Jarvis is actually listening right now. */
+body.talking .panel.voice{border-color:var(--blush);box-shadow:0 0 18px #F76A9A88;}
+body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:blink .7s infinite;}
+#muteBtn.active{background:linear-gradient(180deg,#F76A9A,#F7B7CE);color:#fff;border-color:#F76A9A;}

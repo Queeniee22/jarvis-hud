@@ -53,10 +53,11 @@ def test_rms_level_makes_quiet_speech_visible():
     assert ears.rms_level(np.full(1600, 0.05, dtype="float32")) == 1.0
 
 
-def test_endpoint_constants_are_sane():
-    """Must tolerate a real mid-sentence pause (0.6s cut Mackenzie off) but
-    still respond without a long dead wait."""
-    assert 1.2 <= ears.END_SILENCE_BLOCKS * 0.1 <= 2.5
+def test_ptt_constants_are_sane():
+    """Push-to-talk has no silence threshold to tune; only a pre-roll and a
+    runaway backstop."""
+    assert ears.PREROLL_BLOCKS >= 1
+    assert ears.MAX_UTTERANCE_BLOCKS * 0.1 >= 30
     assert ears.PREROLL_BLOCKS >= 1
     assert ears.MAX_UTTERANCE_BLOCKS * 0.1 >= 10
 
@@ -70,29 +71,24 @@ def test_single_block_speech_detection():
     assert ears.has_speech(silent_block) is False
 
 
-async def test_speech_then_pause_reaches_the_brain(monkeypatch):
-    """End-to-end through ears.run: an utterance followed by a pause must be
-    transcribed and handed to the brain.
+async def test_holding_then_releasing_reaches_the_brain(monkeypatch):
+    """End-to-end: hold, talk, release -> transcript goes to the brain.
 
-    Regression: the transcription block was once indented under a `continue`,
-    making it unreachable, so the mic worked and nothing ever responded.
+    Releasing is what ends the turn, so no pause length is involved.
     """
     import sys, types, asyncio as aio
     import numpy as np
 
     captured = {}
 
-    # fake whisper
     class FakeModel:
         def __init__(self, *a, **k): pass
         def transcribe(self, audio, **k):
-            seg = types.SimpleNamespace(text="hello jarvis")
-            return [seg], None
+            return [types.SimpleNamespace(text="hello jarvis")], None
     fw = types.ModuleType("faster_whisper")
     fw.WhisperModel = FakeModel
     monkeypatch.setitem(sys.modules, "faster_whisper", fw)
 
-    # fake sounddevice whose stream feeds speech then silence
     holder = {}
     class FakeStream:
         def __init__(self, **kw): holder["cb"] = kw["callback"]
@@ -101,7 +97,6 @@ async def test_speech_then_pause_reaches_the_brain(monkeypatch):
     sd.InputStream = FakeStream
     monkeypatch.setitem(sys.modules, "sounddevice", sd)
 
-    # capture the brain call
     import jarvis.services.brain as brain_mod
     async def fake_ask(hub, text, source="text"):
         captured["text"] = text
@@ -113,17 +108,17 @@ async def test_speech_then_pause_reaches_the_brain(monkeypatch):
         async def broadcast(self, m): self.msgs.append(m)
 
     ears.set_muted(False)
+    ears.set_ptt(False)
     hub = Hub()
     task = aio.create_task(ears.run(hub))
-    await aio.sleep(0.05)  # let run() reach the stream
+    await aio.sleep(0.05)
 
     speech = np.full((1600, 1), 0.02, dtype="float32")
-    silence = np.full((1600, 1), 0.0004, dtype="float32")
-    cb = holder["cb"]
+    ears.set_ptt(True)                      # key down
     for _ in range(8):
-        cb(speech, 1600, None, None)
-    for _ in range(ears.END_SILENCE_BLOCKS + 1):
-        cb(silence, 1600, None, None)
+        holder["cb"](speech, 1600, None, None)
+    await aio.sleep(0.05)
+    ears.set_ptt(False)                     # key up ends the turn
 
     for _ in range(60):
         await aio.sleep(0.02)
@@ -133,7 +128,59 @@ async def test_speech_then_pause_reaches_the_brain(monkeypatch):
 
     assert captured.get("text") == "hello jarvis"
     assert captured.get("source") == "voice"
-    assert any(m.get("type") == "heard" for m in hub.msgs), "should show the heard caption"
+    assert any(m.get("type") == "heard" for m in hub.msgs)
+
+
+async def test_nothing_captured_while_key_is_up(monkeypatch):
+    """Audio must be ignored entirely unless the key is held."""
+    import sys, types, asyncio as aio
+    import numpy as np
+
+    called = {"n": 0}
+
+    class FakeModel:
+        def __init__(self, *a, **k): pass
+        def transcribe(self, audio, **k):
+            called["n"] += 1
+            return [types.SimpleNamespace(text="should not happen")], None
+    fw = types.ModuleType("faster_whisper")
+    fw.WhisperModel = FakeModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fw)
+
+    holder = {}
+    class FakeStream:
+        def __init__(self, **kw): holder["cb"] = kw["callback"]
+        def start(self): pass
+    sd = types.ModuleType("sounddevice")
+    sd.InputStream = FakeStream
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+
+    class Hub:
+        async def broadcast(self, m): pass
+
+    ears.set_muted(False)
+    ears.set_ptt(False)
+    task = aio.create_task(ears.run(Hub()))
+    await aio.sleep(0.05)
+
+    speech = np.full((1600, 1), 0.02, dtype="float32")
+    for _ in range(20):                     # talking with the key UP
+        holder["cb"](speech, 1600, None, None)
+    await aio.sleep(0.3)
+    task.cancel()
+
+    assert called["n"] == 0, "must not transcribe anything while the key is up"
+
+
+def test_set_ptt_reports_only_real_changes():
+    """Key auto-repeat must not re-trigger capture."""
+    ears._q = None          # detach from any loop a prior test left behind
+    ears._loop = None
+    ears.set_ptt(False)
+    assert ears.set_ptt(True) is True
+    assert ears.set_ptt(True) is False      # repeat -> no change
+    assert ears.set_ptt(False) is True
+    ears.set_ptt(False)
 
 
 def test_hysteresis_keeps_a_quiet_syllable_inside_the_utterance():

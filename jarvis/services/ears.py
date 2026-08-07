@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import logging
 
 import numpy as np
@@ -8,6 +9,54 @@ from jarvis.services import voice
 log = logging.getLogger(__name__)
 
 _muted = False
+
+# Push-to-talk. Releasing the key IS the end of the turn, so there is no
+# silence detection and nothing to guess at -- the cause of Jarvis cutting
+# Mackenzie off mid-sentence.
+_ptt = False
+_q = None
+_loop = None
+_preroll = collections.deque(maxlen=3)
+_FLUSH = object()
+
+
+def is_ptt() -> bool:
+    return _ptt
+
+
+def set_ptt(active: bool) -> bool:
+    """Start or stop capturing. Returns True if the state actually changed."""
+    global _ptt
+    active = bool(active)
+    if active == _ptt:
+        return False
+    _ptt = active
+    if _q is None or _loop is None:
+        return True
+    try:
+        if active:
+            # Seed with the moments just before the key went down, so the
+            # first syllable isn't clipped by human reaction time.
+            for block in list(_preroll):
+                _loop.call_soon_threadsafe(_enqueue_global, block)
+        else:
+            _loop.call_soon_threadsafe(_enqueue_global, _FLUSH)
+    except RuntimeError:
+        # The capture loop is gone (shutdown, or a restarted event loop).
+        # Toggling the key must never raise into the websocket handler.
+        log.debug("ears: capture loop unavailable, dropping ptt signal")
+    return True
+
+
+def _enqueue_global(item):
+    if _q is None:
+        return
+    if _q.full():
+        try:
+            _q.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    _q.put_nowait(item)
 
 
 def is_muted() -> bool:
@@ -68,13 +117,11 @@ MIC_VIS_GAIN = 25.0
 # Utterance endpointing, in 0.1s blocks. The old loop transcribed on a fixed
 # 2s boundary, so it sat waiting even after you'd clearly stopped talking,
 # and could also slice a sentence in half. Now a pause ends the utterance.
-# 0.6s cut people off mid-sentence, and 1.5s still did. Paired with the
-# continue-threshold hysteresis above, 2.0s of genuine quiet is a real
-# end-of-turn rather than a thinking pause.
-END_SILENCE_BLOCKS = 20     # 2.0s of quiet = you're done talking
-PREROLL_BLOCKS = 3          # 0.3s kept before speech so the first syllable survives
-# 15s cut off long sentences mid-flow. This is only a runaway backstop.
-MAX_UTTERANCE_BLOCKS = 300  # 30s hard cap
+# Push-to-talk ended the guessing: releasing the key ends the turn, so there
+# is no silence threshold to tune. Automatic endpointing cut Mackenzie off
+# mid-sentence at 0.6s, 1.5s and 2.0s alike.
+PREROLL_BLOCKS = 3          # 0.3s captured before the key went down
+MAX_UTTERANCE_BLOCKS = 600  # 60s backstop for a key left held down
 
 
 def rms_level(block) -> float:
@@ -117,14 +164,17 @@ async def run(hub):
         await hub.broadcast({"type": "status", "service": "ears", "state": "offline", "detail": f"model: {e}"})
         return
 
+    global _q, _loop
     loop = asyncio.get_event_loop()
+    _loop = loop
     # Bounded to ~5s of audio (50 blocks x 100ms). If transcription of a
     # chunk takes longer than the chunk itself, an unbounded queue would
     # grow forever and transcription would permanently lag behind live
     # audio. Instead we drop the oldest queued block to keep latency
     # bounded -- losing a little audio is better than an ever-growing
     # backlog.
-    q: asyncio.Queue = asyncio.Queue(maxsize=50)
+    q: asyncio.Queue = asyncio.Queue(maxsize=400)  # ~40s of held audio
+    _q = q
 
     def _enqueue(block):
         if q.full():
@@ -135,16 +185,18 @@ async def run(hub):
         q.put_nowait(block)
 
     def cb(indata, frames, t, status):
-        # Half-duplex: while Jarvis is audible the mic would capture his own
-        # voice and feed it back as if Mackenzie had said it.
-        gated = _muted or voice.is_speaking()
-        lvl = 0.0 if gated else rms_level(indata[:, 0])
+        block = indata.copy()
+        _preroll.append(block)
+        capturing = _ptt and not _muted
+        # Show the live level only while actually capturing, so the waveform
+        # means "Jarvis is hearing this" rather than "the mic exists".
+        lvl = rms_level(indata[:, 0]) if capturing else 0.0
         _schedule_mic(loop, hub, {
             "type": "mic", "level": lvl, "muted": _muted,
-            "gated": bool(voice.is_speaking()),
+            "ptt": bool(_ptt), "gated": bool(voice.is_speaking()),
         })
-        if not gated:
-            loop.call_soon_threadsafe(_enqueue, indata.copy())
+        if capturing:
+            loop.call_soon_threadsafe(_enqueue, block)
 
     try:
         stream = sd.InputStream(channels=1, samplerate=16000, blocksize=1600, callback=cb)
@@ -154,47 +206,28 @@ async def run(hub):
         return
 
     buffer = []
-    speaking = False
-    silent_run = 0
     while True:
-        block = await q.get()
-        # Hysteresis: once he's talking it takes a much quieter block to
-        # count as a pause, so soft syllables don't end the turn.
-        threshold = CONTINUE_RMS_THRESHOLD if speaking else SPEECH_RMS_THRESHOLD
-        block_has_speech = has_speech(block[:, 0], threshold)
+        item = await q.get()
 
-        if block_has_speech:
-            speaking = True
-            silent_run = 0
-            buffer.append(block)
-        elif speaking:
-            # Keep trailing silence: it carries the tail of the last word
-            # and helps the transcriber close the utterance cleanly.
-            silent_run += 1
-            buffer.append(block)
-        else:
-            # Not talking yet. Hold a short pre-roll so the first syllable
-            # isn't clipped when speech does start.
-            buffer.append(block)
-            if len(buffer) > PREROLL_BLOCKS:
-                buffer.pop(0)
+        # A held key produces audio blocks; releasing it produces _FLUSH.
+        # The release IS the end of the turn, so nothing here has to guess
+        # whether Mackenzie has finished talking.
+        if item is not _FLUSH:
+            buffer.append(item)
+            if len(buffer) < MAX_UTTERANCE_BLOCKS:
+                continue
+            log.warning("ears: hit the %ds cap, transcribing early",
+                        int(MAX_UTTERANCE_BLOCKS * 0.1))
+
+        if not buffer:
             continue
-
-        utterance_over = silent_run >= END_SILENCE_BLOCKS
-        too_long = len(buffer) >= MAX_UTTERANCE_BLOCKS
-        if not (utterance_over or too_long):
-            continue
-
         audio = np.concatenate(buffer)[:, 0]
         buffer = []
-        speaking = False
-        silent_run = 0
 
-        # Silence gate: Whisper hallucinates on near-silent audio
-        # (classically "Thank you." / "you"), which would post phantom
-        # messages to the chat and wake the brain. Only transcribe a
-        # chunk that actually contains speech-level energy.
+        # Guard against an accidental tap or a press with nothing said:
+        # Whisper invents phrases when handed silence.
         if not has_speech(audio):
+            log.info("ears: nothing audible in that press, ignoring")
             continue
 
         def _transcribe(audio=audio):

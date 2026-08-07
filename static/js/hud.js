@@ -24,16 +24,42 @@
   };
   function send(obj){ if (ws.readyState===1) ws.send(JSON.stringify(obj)); }
 
-  const muteBtn = document.getElementById('muteBtn');
-  function updateMuteBtn(){
-    if (!muteBtn) return;
-    muteBtn.textContent = state.mic.muted ? 'MUTED' : 'MUTE';
-    muteBtn.classList.toggle('active', !!state.mic.muted);
+  /* push-to-talk: hold SPACE (or hold the button) to talk, release to send.
+     Releasing is the end of the turn, so nothing has to guess whether you
+     have finished a sentence. */
+  const talkBtn = document.getElementById('muteBtn');
+  let pttDown = false;
+  function setPtt(on){
+    if (on === pttDown) return;          // ignore key auto-repeat
+    pttDown = on;
+    send({type:'ptt', value:on});
+    document.body.classList.toggle('talking', on);
+    if (talkBtn) {
+      talkBtn.textContent = on ? 'LISTENING' : 'HOLD SPACE';
+      talkBtn.classList.toggle('active', on);
+    }
   }
-  if (muteBtn) {
-    muteBtn.addEventListener('click', () => {
-      send({type:'mute', value: !state.mic.muted});
-    });
+  function updateMuteBtn(){
+    if (!talkBtn || pttDown) return;
+    talkBtn.textContent = 'HOLD SPACE';
+  }
+  const typing = (e) => {
+    const el = e.target;
+    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  };
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !typing(e)) { e.preventDefault(); setPtt(true); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && !typing(e)) { e.preventDefault(); setPtt(false); }
+  });
+  // Releasing outside the window must not leave the mic stuck open.
+  window.addEventListener('blur', () => setPtt(false));
+  if (talkBtn) {
+    talkBtn.addEventListener('mousedown', (e) => { e.preventDefault(); setPtt(true); });
+    window.addEventListener('mouseup', () => setPtt(false));
+    talkBtn.addEventListener('touchstart', (e) => { e.preventDefault(); setPtt(true); }, {passive:false});
+    window.addEventListener('touchend', () => setPtt(false));
   }
 
   function applyVitals(m){
