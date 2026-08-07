@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
-from jarvis.services import brain, vitals
+from jarvis.services import brain, vitals, ears
 
 app = FastAPI()
 hub = ConnectionHub()
@@ -13,6 +13,7 @@ hub = ConnectionHub()
 @app.on_event("startup")
 async def _startup():
     asyncio.create_task(vitals.run(hub))
+    asyncio.create_task(ears.run(hub))
 
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")
@@ -41,7 +42,7 @@ async def ws(sock: WebSocket):
                     await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
                     asyncio.create_task(brain.ask(hub, text))
             elif msg.get("type") == "mute":
-                pass  # ears wired in Task 7
+                ears.set_muted(bool(msg.get("value")))
             elif msg.get("type") == "tab":
                 pass  # purely client-side; ignore server-side
     except WebSocketDisconnect:

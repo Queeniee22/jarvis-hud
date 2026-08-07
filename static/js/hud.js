@@ -7,7 +7,7 @@
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
     if (m.type === "vitals") applyVitals(m);
-    else if (m.type === "mic") { state.mic = m; window.setMic(m.level, m.muted); }
+    else if (m.type === "mic") { state.mic = m; window.setMic(m.level, m.muted); updateMuteBtn(); }
     else if (m.type === "speak") { speakFromServer = true; state.speak = m.active ? m.level : 0; }
     else if (m.type === "chat") applyChat(m);
     else if (m.type === "vault") applyVault(m);
@@ -16,6 +16,18 @@
     else if (m.type === "status") applyStatus(m);
   };
   function send(obj){ if (ws.readyState===1) ws.send(JSON.stringify(obj)); }
+
+  const muteBtn = document.getElementById('muteBtn');
+  function updateMuteBtn(){
+    if (!muteBtn) return;
+    muteBtn.textContent = state.mic.muted ? 'MUTED' : 'MUTE';
+    muteBtn.classList.toggle('active', !!state.mic.muted);
+  }
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
+      send({type:'mute', value: !state.mic.muted});
+    });
+  }
 
   function applyVitals(m){
     document.querySelector(".f1").style.width = m.cpu + "%";

@@ -71,6 +71,11 @@ li{font-size:15px;margin:9px 0;display:flex;gap:8px;align-items:center;}
 .voice .mic{font-family:"Press Start 2P";font-size:9px;color:var(--deep);display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .micdot{width:10px;height:10px;border-radius:50%;background:#F76A9A;box-shadow:0 0 8px #F76A9A;animation:blink 1.1s infinite;}
 @keyframes blink{50%{opacity:.25;}}
+#muteBtn{font-family:"Press Start 2P";font-size:7px;color:var(--deep);background:var(--cream);
+  border:2px solid var(--blush);border-radius:8px;padding:4px 8px;cursor:pointer;
+  margin-left:auto;letter-spacing:1px;box-shadow:0 0 4px #F7B7CE55;}
+#muteBtn:hover{background:var(--cotton);}
+#muteBtn.active{background:#F76A9A;color:#fff;border-color:#F76A9A;}
 .wave{display:flex;align-items:flex-end;gap:3px;height:56px;padding:0 4px;}
 .wave span{flex:1;background:linear-gradient(180deg,#F76A9A,#F7B7CE);border-radius:4px;
   box-shadow:0 0 7px #F76A9Aaa;height:20%;transition:height .07s linear;}
