@@ -28,6 +28,7 @@ async def ask(hub, text: str):
         "--append-system-prompt", SYSTEM_PROMPT,
         "--output-format", "stream-json", "--verbose",
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        limit=2**20,  # 1 MiB; default 64KB is too small for long stream-json lines
     )
     async for raw in proc.stdout:
         delta = parse_stream_line(raw.decode("utf-8", "ignore").strip())

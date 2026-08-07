@@ -9,11 +9,12 @@ class ConnectionHub:
     def remove(self, ws): self._clients.discard(ws)
 
     async def broadcast(self, message: dict):
-        dead = []
-        for ws in list(self._clients):
-            try:
-                await ws.send_json(message)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.remove(ws)
+        async with self._lock:
+            dead = []
+            for ws in list(self._clients):
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                self.remove(ws)

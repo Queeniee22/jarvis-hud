@@ -33,3 +33,32 @@ async def test_broadcast_survives_and_drops_failing_client():
     assert good.sent == [{"type": "ping"}]          # healthy client still received it
     await hub.broadcast({"type": "ping2"})           # bad client was dropped
     assert good.sent[-1] == {"type": "ping2"}
+
+@pytest.mark.asyncio
+async def test_concurrent_broadcasts_do_not_interleave_sends():
+    """Regression: two broadcasts firing concurrently (e.g. mic + vitals)
+    must not interleave ws.send_json calls on the same connection."""
+    events = []
+
+    class RecordingWS:
+        async def send_json(self, obj):
+            events.append(("enter", obj["type"]))
+            await asyncio.sleep(0)  # yield, giving a race a chance to interleave
+            events.append(("exit", obj["type"]))
+
+    hub = ConnectionHub()
+    ws = RecordingWS()
+    hub.add(ws)
+
+    await asyncio.gather(
+        hub.broadcast({"type": "mic"}),
+        hub.broadcast({"type": "vitals"}),
+    )
+
+    # Each broadcast's enter/exit pair must be contiguous - no other
+    # broadcast's enter sneaking in between this one's enter and exit.
+    assert events[0][0] == "enter"
+    assert events[1] == ("exit", events[0][1])
+    assert events[2][0] == "enter"
+    assert events[3] == ("exit", events[2][1])
+    assert {events[0][1], events[2][1]} == {"mic", "vitals"}

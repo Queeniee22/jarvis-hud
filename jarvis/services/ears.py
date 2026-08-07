@@ -18,11 +18,6 @@ def rms_level(block) -> float:
     return max(0.0, min(1.0, rms * 3.0))
 
 
-def _schedule(loop, hub, msg):
-    """Marshal a broadcast from the audio callback thread onto the event loop."""
-    loop.call_soon_threadsafe(lambda: asyncio.create_task(hub.broadcast(msg)))
-
-
 _mic_broadcast_task = None
 
 
@@ -59,13 +54,27 @@ async def run(hub):
         return
 
     loop = asyncio.get_event_loop()
-    q: asyncio.Queue = asyncio.Queue()
+    # Bounded to ~5s of audio (50 blocks x 100ms). If transcription of a
+    # chunk takes longer than the chunk itself, an unbounded queue would
+    # grow forever and transcription would permanently lag behind live
+    # audio. Instead we drop the oldest queued block to keep latency
+    # bounded -- losing a little audio is better than an ever-growing
+    # backlog.
+    q: asyncio.Queue = asyncio.Queue(maxsize=50)
+
+    def _enqueue(block):
+        if q.full():
+            try:
+                q.get_nowait()  # drop oldest to make room
+            except asyncio.QueueEmpty:
+                pass
+        q.put_nowait(block)
 
     def cb(indata, frames, t, status):
         lvl = 0.0 if _muted else rms_level(indata[:, 0])
         _schedule_mic(loop, hub, {"type": "mic", "level": lvl, "muted": _muted})
         if not _muted:
-            loop.call_soon_threadsafe(q.put_nowait, indata.copy())
+            loop.call_soon_threadsafe(_enqueue, indata.copy())
 
     try:
         stream = sd.InputStream(channels=1, samplerate=16000, blocksize=1600, callback=cb)
