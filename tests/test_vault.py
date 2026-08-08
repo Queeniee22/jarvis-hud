@@ -165,3 +165,38 @@ async def test_repeated_failures_do_not_spam_identical_statuses(hub, monkeypatch
     offline = [m for m in sent
                if m["type"] == "status" and m.get("service") == "vault"]
     assert len(offline) == 1, f"one transition, not one per cycle: {offline}"
+
+
+def test_is_known_path_refreshes_for_a_note_added_since_the_last_scan(monkeypatch):
+    """A note created in Obsidian after the last scan -- or a click during
+    the seconds before the first scan -- must not be refused."""
+    from jarvis.services import vault
+
+    monkeypatch.setattr(vault, "_known_paths", {"old.md"})
+    monkeypatch.setattr(vault, "list_files", lambda *a, **k: ["old.md", "brand new.md"])
+
+    assert vault.is_known_path("brand new.md") is True
+    # the refreshed listing is retained, so the next check needs no re-list
+    monkeypatch.setattr(vault, "list_files", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not re-list")))
+    assert vault.is_known_path("brand new.md") is True
+
+
+def test_is_known_path_still_rejects_paths_not_in_the_vault(monkeypatch):
+    """The refresh must not weaken the guard."""
+    from jarvis.services import vault
+
+    monkeypatch.setattr(vault, "_known_paths", set())
+    monkeypatch.setattr(vault, "list_files", lambda *a, **k: ["real.md"])
+    assert vault.is_known_path("../../etc/passwd") is False
+    assert vault.is_known_path("not a note.md") is False
+
+
+def test_is_known_path_rejects_when_the_vault_is_unreachable(monkeypatch):
+    """Obsidian being down must deny, not raise into the websocket handler."""
+    from jarvis.services import vault
+
+    monkeypatch.setattr(vault, "_known_paths", set())
+    def boom(*a, **k):
+        raise ConnectionError("vault down")
+    monkeypatch.setattr(vault, "list_files", boom)
+    assert vault.is_known_path("anything.md") is False

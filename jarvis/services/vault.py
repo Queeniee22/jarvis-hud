@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import urllib.parse
 
@@ -6,6 +7,8 @@ import requests
 import urllib3
 
 from jarvis import config
+
+log = logging.getLogger(__name__)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -101,7 +104,23 @@ def known_paths() -> set[str]:
 
 def is_known_path(path: str) -> bool:
     """Guard for note_open/note_save: reject anything not in the vault's own
-    file list rather than handing an arbitrary path to the REST client."""
+    file list rather than handing an arbitrary path to the REST client.
+
+    Re-lists the vault before rejecting. The listing is a cheap directory
+    walk, and it only happens on a miss, but it removes two real ways an
+    honest click got refused: clicking during the seconds before the first
+    scan finishes, and clicking a note created in Obsidian since the last
+    scan. Being wrong here is invisible to the guard's purpose -- a path
+    still has to exist in the vault to pass.
+    """
+    global _known_paths
+    if path in _known_paths:
+        return True
+    try:
+        _known_paths = set(list_files())
+    except Exception:
+        log.warning("vault: could not refresh the file list to check %r", path)
+        return False
     return path in _known_paths
 
 
