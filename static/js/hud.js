@@ -17,7 +17,11 @@
     else if (m.type === "speak") { speakFromServer = true; state.speak = m.active ? m.level : 0; }
     else if (m.type === "chat") applyChat(m);
     else if (m.type === "vault") applyVault(m);
-    else if (m.type === "graph") state.graph = m;
+    else if (m.type === "graph") {
+      state.graph = m;
+      // Real data arrived: the vault recovered, so drop any offline notice.
+      if (window.setGraphNotice) window.setGraphNotice(null);
+    }
     else if (m.type === "calendar") applyCalendar(m);
     else if (m.type === "ask") applyAsk(m);
     else if (m.type === "heard") applyHeard(m);
@@ -176,11 +180,21 @@
     heardTimer = setTimeout(() => el.classList.remove("show"), 6000);
   }
 
+  function offlineList(id, text){
+    const list = document.getElementById(id);
+    if (list) list.innerHTML = '<li><span class="dot"></span>' + text + '</li>';
+  }
   function applyStatus(m){
     console.warn("service", m.service, m.state, m.detail||"");
-    if (m.service === "calendar" && m.state === "offline") {
-      const list = document.getElementById('todayList');
-      if (list) list.innerHTML = '<li><span class="dot"></span>calendar offline</li>';
+    if (m.state !== "offline") return;
+    if (m.service === "calendar") {
+      offlineList('todayList', 'calendar offline');
+    } else if (m.service === "vault") {
+      // The panel ships with placeholder rows; leaving them up during an
+      // outage shows stale numbers as though they were live.
+      offlineList('vaultList', 'vault offline');
+      // The graph is vault data too -- say why instead of spinning forever.
+      if (window.setGraphNotice) window.setGraphNotice(m.detail || '');
     }
   }
 
