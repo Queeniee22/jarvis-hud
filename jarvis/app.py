@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
-from jarvis.services import brain, vitals, ears, vault, voice, boot
+from jarvis.services import brain, vitals, ears, vault, voice, boot, gcal
 
 app = FastAPI()
 hub = ConnectionHub()
@@ -15,6 +15,7 @@ async def _startup():
     asyncio.create_task(vitals.run(hub))
     asyncio.create_task(ears.run(hub))
     asyncio.create_task(vault.run(hub))
+    asyncio.create_task(gcal.run(hub))
     # Synthesize the "thinking" fillers up front so the first one plays
     # instantly instead of paying a TTS fetch mid-pause.
     asyncio.create_task(voice.prewarm_acks())

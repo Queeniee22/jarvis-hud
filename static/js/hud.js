@@ -115,7 +115,18 @@
       `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${text}</li>`
     ).join('');
   }
-  function applyCalendar(m){ /* Phase 7 */ }
+  function applyCalendar(m){
+    const list = document.getElementById('todayList');
+    if (!list) return;
+    const events = Array.isArray(m.events) ? m.events : [];
+    if (!events.length) {
+      list.innerHTML = '<li><span class="dot"></span>nothing today</li>';
+      return;
+    }
+    list.innerHTML = events.map((ev, i) =>
+      `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${ev.time} &nbsp;${ev.title}</li>`
+    ).join('');
+  }
   /* clickable option cards -- answering by click instead of speaking */
   function clearAsk(){
     const box = document.getElementById('askBox');
@@ -165,7 +176,13 @@
     heardTimer = setTimeout(() => el.classList.remove("show"), 6000);
   }
 
-  function applyStatus(m){ console.warn("service", m.service, m.state, m.detail||""); }
+  function applyStatus(m){
+    console.warn("service", m.service, m.state, m.detail||"");
+    if (m.service === "calendar" && m.state === "offline") {
+      const list = document.getElementById('todayList');
+      if (list) list.innerHTML = '<li><span class="dot"></span>calendar offline</li>';
+    }
+  }
 
   /* live clock, 12-hour am/pm */
   const clockEl=document.getElementById('clock');
