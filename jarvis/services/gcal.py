@@ -42,6 +42,10 @@ def format_events(raw: list[dict]) -> dict:
     return {"type": "calendar", "events": [{"time": t[2], "title": t[3]} for t in items]}
 
 
+class CalendarAuthExpired(Exception):
+    """Consent is gone and only Mackenzie can restore it."""
+
+
 def _load_credentials() -> Credentials | None:
     """Load token.json, refreshing an expired token in place. Never logs the
     token itself -- only the fact that it did/didn't work."""
@@ -51,7 +55,18 @@ def _load_credentials() -> Credentials | None:
     if creds.valid:
         return creds
     if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except Exception as e:
+            # Google expires refresh tokens after 7 days while an app is in
+            # "Testing" publishing status, and revokes them if access is
+            # withdrawn. Raw google-auth text ("invalid_grant: Token has been
+            # expired or revoked") says nothing about the fix, and this is the
+            # failure Mackenzie will actually hit.
+            raise CalendarAuthExpired(
+                "calendar access expired -- re-run scripts/gcal_auth.py "
+                "(publish the app in Google Cloud to stop this recurring)"
+            ) from e
         TOKEN_PATH.write_text(creds.to_json())
         return creds
     return None

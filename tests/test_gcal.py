@@ -61,3 +61,29 @@ async def test_run_broadcasts_offline_when_no_token(monkeypatch, tmp_path):
     assert msg["service"] == "calendar"
     assert msg["state"] == "offline"
     assert "detail" in msg
+
+
+def test_expired_refresh_token_gives_an_actionable_message(monkeypatch, tmp_path):
+    """Google expires refresh tokens weekly while an app is in Testing mode.
+    The panel must say what to do, not echo 'invalid_grant'."""
+    from jarvis.services import gcal
+
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    monkeypatch.setattr(gcal, "TOKEN_PATH", token)
+
+    class FakeCreds:
+        valid = False
+        expired = True
+        refresh_token = "x"
+        def refresh(self, request):
+            raise Exception("invalid_grant: Token has been expired or revoked.")
+    monkeypatch.setattr(gcal.Credentials, "from_authorized_user_file",
+                        staticmethod(lambda *a, **k: FakeCreds()))
+
+    try:
+        gcal._load_credentials()
+        assert False, "should have raised"
+    except gcal.CalendarAuthExpired as e:
+        assert "gcal_auth.py" in str(e), "must name the script that fixes it"
+        assert "invalid_grant" not in str(e)
