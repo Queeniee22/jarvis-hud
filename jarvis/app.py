@@ -49,6 +49,9 @@ async def ws(sock: WebSocket):
     await sock.accept()
     hub.add(sock)
     await sock.send_json({"type": "hello", "app": "jarvis"})
+    # Catch this client up on state it missed -- services broadcast on slow
+    # cycles, and the startup offline notices fire before anyone is listening.
+    await hub.replay(sock)
     try:
         while True:
             try:

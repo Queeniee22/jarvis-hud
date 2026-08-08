@@ -62,3 +62,42 @@ async def test_concurrent_broadcasts_do_not_interleave_sends():
     assert events[2][0] == "enter"
     assert events[3] == ("exit", events[2][1])
     assert {events[0][1], events[2][1]} == {"mic", "vitals"}
+
+
+async def test_new_client_receives_missed_state():
+    """Startup offline notices fire before any browser connects; without a
+    replay the panels sit empty with no explanation."""
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "status", "service": "calendar", "state": "offline", "detail": "no token"})
+    await hub.broadcast({"type": "vault", "projects": ["Jarvis"], "threads": 2})
+
+    late = FakeWS()
+    hub.add(late)
+    await hub.replay(late)
+
+    kinds = {m["type"] for m in late.sent}
+    assert kinds == {"status", "vault"}
+    assert any(m.get("service") == "calendar" for m in late.sent)
+
+
+async def test_replay_keeps_only_the_latest_per_service():
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "status", "service": "calendar", "state": "offline", "detail": "first"})
+    await hub.broadcast({"type": "status", "service": "calendar", "state": "offline", "detail": "second"})
+    await hub.broadcast({"type": "status", "service": "vault", "state": "offline", "detail": "vault"})
+
+    snap = hub.snapshot()
+    cal = [m for m in snap if m.get("service") == "calendar"]
+    assert len(cal) == 1 and cal[0]["detail"] == "second"
+    assert len(snap) == 2, "one entry per service, not a growing log"
+
+
+async def test_transient_messages_are_not_replayed():
+    """Amplitude and chat deltas are moments, not state -- replaying them
+    would make a fresh page render a stale conversation."""
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "speak", "level": 0.5, "active": True})
+    await hub.broadcast({"type": "chat", "role": "jarvis", "delta": "hi", "done": False})
+    await hub.broadcast({"type": "heard", "text": "hello"})
+    await hub.broadcast({"type": "mic", "level": 0.2})
+    assert hub.snapshot() == []
