@@ -3,7 +3,9 @@
   let gc, gx, GW, GH;
   const gcolors=['247,183,206','201,182,228','184,230,196','247,229,160'];
 
-  // stable positions/velocities for real graph nodes, keyed by node id
+  // stable positions/velocities for real graph nodes, keyed by node id.
+  // Kept module-internal -- hud.js and app code only ever get node ids/
+  // labels back through the click callback, never the layout itself.
   const posMap = new Map();
   let groupColorMap = new Map();
   let groupIdx = 0;
@@ -12,11 +14,62 @@
   // if the vault is down that is a lie, and the tab spins until a refresh.
   let notice = null;
 
+  // Nodes from the most recent renderGraph call, for hit-testing on
+  // mousemove/click -- those are separate DOM event handlers, not part of
+  // the render loop, so they need their own copy of "what's on screen now".
+  let lastNodes = [];
+  let hoveredId = null;
+  // The node whose note is currently open beside the graph (set by hud.js),
+  // so its label stays visible even after the mouse moves away.
+  let openNodeId = null;
+  let clickHandler = null;
+
+  const HIT_RADIUS = 14; // canvas px, per the click-target spec
+
   function initGraph(){
     gc = document.getElementById('graph');
     gx = gc.getContext('2d');
     GW = gc.width; GH = gc.height;
+
+    gc.addEventListener('mousemove', (e) => {
+      const hit = nodeAt(e.clientX, e.clientY);
+      hoveredId = hit ? hit.id : null;
+      gc.style.cursor = hit ? 'pointer' : 'default';
+    });
+    gc.addEventListener('mouseleave', () => {
+      hoveredId = null;
+      gc.style.cursor = 'default';
+    });
+    gc.addEventListener('click', (e) => {
+      const hit = nodeAt(e.clientX, e.clientY);
+      if (hit && clickHandler) clickHandler(hit.id, hit.label);
+    });
   }
+
+  /* Convert a click/move in page space to canvas-buffer space and find the
+     nearest node within HIT_RADIUS. The canvas has a fixed internal pixel
+     size (gc.width/gc.height) but is scaled down by CSS max-width/max-height
+     -- e.getBoundingClientRect() gives the on-screen box, so the ratio of
+     buffer size to that box is the scale factor back to canvas space. */
+  function nodeAt(clientX, clientY){
+    if (!gc) return null;
+    const r = gc.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    const x = (clientX - r.left) * (gc.width / r.width);
+    const y = (clientY - r.top) * (gc.height / r.height);
+    let best = null, bestDist = HIT_RADIUS;
+    for (const n of lastNodes) {
+      const p = posMap.get(n.id);
+      if (!p) continue;
+      const dx = p.x - x, dy = p.y - y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= bestDist) { bestDist = dist; best = n; }
+    }
+    return best;
+  }
+
+  function setGraphNodeClick(fn){ clickHandler = fn; }
+  function setGraphOpenNode(id){ openNodeId = id || null; }
 
   function setGraphNotice(text){ notice = text || null; }
 
@@ -117,11 +170,22 @@
     }
   }
 
+  function drawNodeLabel(nodes, id, color){
+    const p = posMap.get(id);
+    const n = nodes.find(n => n.id === id);
+    if (!p || !n) return;
+    gx.font = '10px "Pixelify Sans", sans-serif';
+    gx.textAlign = 'center';
+    gx.fillStyle = color;
+    gx.fillText(n.label, p.x, p.y - 12);
+  }
+
   function renderGraph(data){
     gx.clearRect(0,0,GW,GH);
 
     if(data && data.nodes && data.links){
       const nodes = data.nodes, links = data.links;
+      lastNodes = nodes; // for nodeAt() hit-testing outside the render loop
       stepForceLayout(nodes, links);
 
       gx.lineWidth=1;
@@ -135,11 +199,20 @@
         const p = posMap.get(n.id);
         if(!p) continue;
         const c = colorForGroup(n.group);
+        // Hovered/open nodes draw bigger and brighter -- the only signal
+        // (besides the cursor) that a node is a clickable target at all.
+        const emphasized = n.id === hoveredId || n.id === openNodeId;
+        const radius = emphasized ? 6 : 3;
         gx.beginPath();gx.fillStyle='rgba('+c+',0.95)';
-        gx.shadowColor='rgba('+c+',0.9)';gx.shadowBlur=8;
-        gx.arc(p.x,p.y,3,0,7);gx.fill();
+        gx.shadowColor='rgba('+c+',0.9)';gx.shadowBlur = emphasized ? 14 : 8;
+        gx.arc(p.x,p.y,radius,0,7);gx.fill();
       }
       gx.shadowBlur=0;
+
+      // Labels drawn last, above every node/link, so hovered and
+      // currently-open notes are legible regardless of what's underneath.
+      if (openNodeId && openNodeId !== hoveredId) drawNodeLabel(nodes, openNodeId, 'rgba(184,230,196,0.95)');
+      if (hoveredId) drawNodeLabel(nodes, hoveredId, 'rgba(247,183,206,0.95)');
       return;
     }
 
@@ -151,4 +224,6 @@
   window.initGraph = initGraph;
   window.renderGraph = renderGraph;
   window.setGraphNotice = setGraphNotice;
+  window.setGraphNodeClick = setGraphNodeClick;
+  window.setGraphOpenNode = setGraphOpenNode;
 })();

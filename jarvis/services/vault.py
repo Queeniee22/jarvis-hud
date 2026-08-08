@@ -12,6 +12,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)")
 TIMEOUT = 5
 
+# Paths seen in the most recent vault listing (set by run() each cycle).
+# note_open/note_save in app.py check against this before touching disk --
+# a websocket message is untrusted input, and without this a malformed or
+# malicious path could read or write outside the notes the graph actually
+# knows about.
+_known_paths: set[str] = set()
+
 
 def _base_url() -> str:
     return f"{config.OBSIDIAN_SCHEME}://127.0.0.1:{config.OBSIDIAN_PORT}"
@@ -54,14 +61,48 @@ def list_files(dir_path: str = "") -> list[str]:
     return files
 
 
-def read_links(path: str) -> list[str]:
-    """Read a note's raw markdown and return the list of wikilink targets."""
+def _get_markdown(path: str) -> str:
+    """GET a note's raw markdown body. Shared by read_links (which only wants
+    the wikilinks out of it) and read_note (which wants the whole thing)."""
     base = _base_url()
     url = base + "/vault/" + _encode_path(path)
     r = requests.get(url, headers=_headers(accept="text/markdown"), timeout=TIMEOUT, verify=_verify())
     r.raise_for_status()
-    text = r.text
+    return r.text
+
+
+def read_links(path: str) -> list[str]:
+    """Read a note's raw markdown and return the list of wikilink targets."""
+    text = _get_markdown(path)
     return [m.group(1).strip() for m in WIKILINK_RE.finditer(text)]
+
+
+def read_note(path: str) -> str:
+    """Read a note's raw markdown, for display/editing in the HUD."""
+    return _get_markdown(path)
+
+
+def write_note(path: str, content: str) -> None:
+    """Overwrite a note's full body in the vault. Caller (app.py) is
+    responsible for checking is_known_path first -- this function trusts
+    whatever path it is given."""
+    base = _base_url()
+    url = base + "/vault/" + _encode_path(path)
+    headers = _headers()
+    headers["Content-Type"] = "text/markdown"
+    r = requests.put(url, headers=headers, data=content.encode("utf-8"), timeout=TIMEOUT, verify=_verify())
+    r.raise_for_status()
+
+
+def known_paths() -> set[str]:
+    """The note paths seen in the most recent vault listing."""
+    return set(_known_paths)
+
+
+def is_known_path(path: str) -> bool:
+    """Guard for note_open/note_save: reject anything not in the vault's own
+    file list rather than handing an arbitrary path to the REST client."""
+    return path in _known_paths
 
 
 def build_graph(files: list[str], links: dict[str, list[str]]) -> dict:
@@ -104,6 +145,7 @@ def build_graph(files: list[str], links: dict[str, list[str]]) -> dict:
 
 
 async def run(hub, interval: float = 60.0):
+    global _known_paths
     if not _api_key():
         await hub.broadcast({"type": "status", "service": "vault", "state": "offline", "detail": "no API key configured"})
         return
@@ -117,6 +159,7 @@ async def run(hub, interval: float = 60.0):
     while True:
         try:
             files = await asyncio.to_thread(list_files)
+            _known_paths = set(files)
             links: dict[str, list[str]] = {}
             for f in files:
                 links[f] = await asyncio.to_thread(read_links, f)

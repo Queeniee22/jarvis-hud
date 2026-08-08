@@ -55,6 +55,44 @@ canvas{display:block;max-width:96%;max-height:96%;}
   border:2px solid #5A3A5E;border-radius:10px;padding:7px 16px;width:60%;text-align:center;}
 .gstats{position:absolute;top:14px;left:14px;z-index:3;font-size:11px;color:#C9B6E4;line-height:1.6;}
 
+/* Graph tab layout: canvas + note panel side by side. Both children are
+   flex:1 so the canvas alone fills the row when the panel is display:none,
+   and they split 50/50 the moment it appears -- no width math in JS. */
+.graphRow{position:relative;width:100%;height:100%;display:flex;align-items:stretch;justify-content:center;}
+.graphCol{position:relative;flex:1;min-width:0;display:flex;align-items:center;justify-content:center;}
+
+/* Note panel: click a graph node to read/edit that note beside the graph.
+   Same dark-plum-on-blush language as the askbox so it reads as part of
+   the same surface, not a bolted-on widget. */
+.notePanel{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;
+  margin:14px 14px 14px 0;background:#2C1A30ee;border:2px solid var(--blush);
+  border-radius:14px;padding:14px 16px;box-shadow:0 0 22px #F76A9A66;}
+.notePanel.hide{display:none;}
+.noteHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.noteTitleWrap{min-width:0;}
+.noteTitle{font-family:"Press Start 2P";font-size:10px;color:#F7B7CE;
+  text-shadow:0 0 8px #F76A9A88;letter-spacing:1px;word-break:break-word;}
+.notePath{font-family:"Pixelify Sans";font-size:11px;color:#C9B6E4;opacity:.75;
+  margin-top:6px;word-break:break-all;}
+.noteClose{flex:none;font-family:"Press Start 2P";font-size:14px;line-height:1;
+  color:#E9C7DE;background:#2C1A30;border:2px solid #5A3A5E;border-radius:8px;
+  padding:2px 8px;cursor:pointer;}
+.noteClose:hover{background:#3A2440;color:#F7B7CE;}
+.noteBody{flex:1;min-height:0;resize:none;font-family:"Pixelify Sans",monospace;
+  font-size:14px;line-height:1.5;color:#F3E0EC;background:#1A0E1Ecc;
+  border:1px solid #5A3A5E;border-radius:10px;padding:10px 12px;outline:none;}
+.noteBody:focus{border-color:var(--blush);box-shadow:0 0 10px #F76A9A55;}
+.noteFoot{display:flex;align-items:center;gap:12px;}
+.noteSave{font-family:"Press Start 2P";font-size:8px;color:#3A2440;
+  background:linear-gradient(180deg,#F9D5E5,#F7B7CE);border:2px solid #F76A9A;
+  border-radius:8px;padding:8px 14px;cursor:pointer;letter-spacing:1px;}
+.noteSave:hover{box-shadow:0 0 14px #F76A9A99;}
+.noteSaved{font-family:"Pixelify Sans";font-size:13px;color:var(--mint);
+  opacity:0;transition:opacity .5s ease;}
+.noteSaved.show{opacity:1;}
+.noteError{font-family:"Pixelify Sans";font-size:13px;color:#F76A9A;
+  overflow-wrap:anywhere;}
+
 .bar{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:15px;}
 .bar .lbl{width:42px;color:var(--deep);}
 .track{flex:1;height:14px;background:#F3E0EC;border-radius:6px;overflow:hidden;border:1px solid var(--line);}

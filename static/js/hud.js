@@ -26,6 +26,9 @@
     else if (m.type === "ask") applyAsk(m);
     else if (m.type === "heard") applyHeard(m);
     else if (m.type === "status") applyStatus(m);
+    else if (m.type === "note") applyNote(m);
+    else if (m.type === "note_saved") applyNoteSaved(m);
+    else if (m.type === "note_error") applyNoteError(m);
   };
   function send(obj){ if (ws.readyState===1) ws.send(JSON.stringify(obj)); }
 
@@ -198,6 +201,80 @@
     }
   }
 
+  /* Note panel: click a graph node to read that note beside the graph, edit
+     it, and save back to the vault. graph.js only ever hands us an id/label
+     through the click callback -- it never touches the DOM here. */
+  const notePanel = document.getElementById('notePanel');
+  const noteTitleEl = document.getElementById('noteTitle');
+  const notePathEl = document.getElementById('notePath');
+  const noteBodyEl = document.getElementById('noteBody');
+  const noteSaveBtn = document.getElementById('noteSave');
+  const noteSavedEl = document.getElementById('noteSaved');
+  const noteErrorEl = document.getElementById('noteError');
+  const noteCloseBtn = document.getElementById('noteClose');
+  let noteState = { path: null, original: '' };
+  let noteSavedTimer = null;
+
+  function noteBasename(path){
+    const name = path.split('/').pop();
+    return name.endsWith('.md') ? name.slice(0, -3) : name;
+  }
+  function noteDirty(){
+    return noteState.path !== null && noteBodyEl && noteBodyEl.value !== noteState.original;
+  }
+  // A plain confirm() is enough here -- this is a local single-user HUD,
+  // not a page that needs a styled modal for one rare "are you sure".
+  function noteConfirmDiscard(){
+    return !noteDirty() || confirm('Discard unsaved changes to this note?');
+  }
+  function openNote(path){
+    if (noteState.path === path && notePanel && !notePanel.classList.contains('hide')) return;
+    if (!noteConfirmDiscard()) return;
+    send({type:'note_open', path});
+  }
+  function applyNote(m){
+    if (!notePanel || !m.path) return;
+    noteState = { path: m.path, original: m.content || '' };
+    noteTitleEl.textContent = noteBasename(m.path);
+    notePathEl.textContent = m.path;
+    noteBodyEl.value = m.content || '';
+    noteErrorEl.textContent = '';
+    notePanel.classList.remove('hide');
+    if (window.setGraphOpenNode) window.setGraphOpenNode(m.path);
+  }
+  function applyNoteSaved(m){
+    if (!noteState.path || noteState.path !== m.path) return;
+    noteState.original = noteBodyEl.value; // this exact text is now on disk
+    noteErrorEl.textContent = '';
+    noteSavedEl.classList.add('show');
+    clearTimeout(noteSavedTimer);
+    noteSavedTimer = setTimeout(() => noteSavedEl.classList.remove('show'), 2000);
+  }
+  function applyNoteError(m){
+    if (noteErrorEl) noteErrorEl.textContent = m.detail || 'save failed';
+  }
+  function closeNote(){
+    if (!noteConfirmDiscard()) return;
+    noteState = { path: null, original: '' };
+    if (notePanel) notePanel.classList.add('hide');
+    if (window.setGraphOpenNode) window.setGraphOpenNode(null);
+  }
+  function saveNote(){
+    if (!noteState.path) return;
+    send({type:'note_save', path: noteState.path, content: noteBodyEl.value});
+  }
+  if (window.setGraphNodeClick) window.setGraphNodeClick((id) => openNote(id));
+  if (noteSaveBtn) noteSaveBtn.addEventListener('click', saveNote);
+  if (noteCloseBtn) noteCloseBtn.addEventListener('click', closeNote);
+  if (noteBodyEl) {
+    noteBodyEl.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault(); // otherwise the browser's own Save dialog pops up
+        saveNote();
+      }
+    });
+  }
+
   /* live clock, 12-hour am/pm */
   const clockEl=document.getElementById('clock');
   function tick(){
@@ -257,7 +334,11 @@
   }
 
   // Debug handle: lets the UI be exercised without a live conversation.
-  window.__hud = { applyAsk, clearAsk, applyHeard, send };
+  window.__hud = {
+    applyAsk, clearAsk, applyHeard, send,
+    applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
+    noteState: () => noteState,
+  };
 
   window.initCore();
   window.initGraph();

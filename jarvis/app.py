@@ -90,6 +90,31 @@ async def ws(sock: WebSocket):
                 ears.set_muted(bool(msg.get("value")))
             elif msg.get("type") == "tab":
                 pass  # purely client-side; ignore server-side
+            elif msg.get("type") == "note_open":
+                path = (msg.get("path") or "").strip()
+                if not path or not vault.is_known_path(path):
+                    # Guard against a malformed/malicious path -- never hand
+                    # an arbitrary string to the vault REST client.
+                    await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
+                else:
+                    try:
+                        content = await asyncio.to_thread(vault.read_note, path)
+                        await hub.broadcast({"type": "note", "path": path, "content": content})
+                    except Exception as e:
+                        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
+            elif msg.get("type") == "note_save":
+                path = (msg.get("path") or "").strip()
+                content = msg.get("content")
+                if not path or not vault.is_known_path(path) or content is None:
+                    await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
+                else:
+                    try:
+                        await asyncio.to_thread(vault.write_note, path, content)
+                        await hub.broadcast({"type": "note_saved", "path": path})
+                    except Exception as e:
+                        # Never log note content -- only the path and the
+                        # HTTP/library error string end up anywhere.
+                        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
     except WebSocketDisconnect:
         pass
     finally:

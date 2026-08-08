@@ -45,9 +45,28 @@
         <div class="bignum">135,000<small>MEMORIES INDEXED</small></div>
       </div>
       <div class="view hide" id="viewGraph">
-        <div class="gstats">NODES: 902<br>LINKS: 3611<br>FPS: 60<br><span style="color:#B8E6C4">■ SIM STABLE</span></div>
-        <div class="gsearch"># search notes… or #tag</div>
-        <canvas id="graph" width="640" height="640"></canvas>
+        <div class="graphRow" id="graphRow">
+          <div class="graphCol">
+            <div class="gstats">NODES: 902<br>LINKS: 3611<br>FPS: 60<br><span style="color:#B8E6C4">■ SIM STABLE</span></div>
+            <div class="gsearch"># search notes… or #tag</div>
+            <canvas id="graph" width="640" height="640"></canvas>
+          </div>
+          <div class="notePanel hide" id="notePanel">
+            <div class="noteHead">
+              <div class="noteTitleWrap">
+                <div class="noteTitle" id="noteTitle"></div>
+                <div class="notePath" id="notePath"></div>
+              </div>
+              <button class="noteClose" id="noteClose" title="close">×</button>
+            </div>
+            <textarea class="noteBody" id="noteBody" spellcheck="false"></textarea>
+            <div class="noteFoot">
+              <button class="noteSave" id="noteSave">SAVE</button>
+              <span class="noteSaved" id="noteSaved">saved ✓</span>
+              <span class="noteError" id="noteError"></span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
