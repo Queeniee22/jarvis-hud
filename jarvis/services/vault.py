@@ -108,6 +108,12 @@ async def run(hub, interval: float = 60.0):
         await hub.broadcast({"type": "status", "service": "vault", "state": "offline", "detail": "no API key configured"})
         return
 
+    # Report transitions, not every cycle. The hub keeps the last status per
+    # service and replays it to new clients, so a repeat adds nothing -- and
+    # a failure that is never followed by a recovery would leave every future
+    # client being told a healthy vault is offline.
+    online: bool | None = None
+
     while True:
         try:
             files = await asyncio.to_thread(list_files)
@@ -127,7 +133,12 @@ async def run(hub, interval: float = 60.0):
                 "threads": len(work_notes),
                 "lastNote": last_note,
             })
+            if online is not True:
+                await hub.broadcast({"type": "status", "service": "vault", "state": "online"})
+                online = True
         except Exception as e:
-            await hub.broadcast({"type": "status", "service": "vault", "state": "offline", "detail": str(e)})
+            if online is not False:
+                await hub.broadcast({"type": "status", "service": "vault", "state": "offline", "detail": str(e)})
+                online = False
 
         await asyncio.sleep(interval)
