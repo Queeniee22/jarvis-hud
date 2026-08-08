@@ -6,3 +6,5 @@ models/
 token.json
 credentials.json
 *.egg-info/
+
+node_modules/

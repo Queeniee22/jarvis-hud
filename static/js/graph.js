@@ -31,7 +31,10 @@
   // decoration pretending to be instrumentation.
   let statsEl = null;
   let frameTimes = [];
-  let lastStatsPaint = 0;
+  // -Infinity, not 0: performance.now() is near zero on a fresh page, so a
+  // 0 start meant the very first paint was throttled away and the readout
+  // sat blank for the first 250ms.
+  let lastStatsPaint = -Infinity;
   let layoutEnergy = 0;
   let energyHistory = [];
 
@@ -194,8 +197,11 @@
     gx.fillText(n.label, p.x, p.y - 12);
   }
 
+  // Current readout values, kept separate from the DOM write so behaviour is
+  // observable without waiting on the repaint throttle.
+  let statsState = { nodes: 0, links: 0, fps: 0, settled: false, hasData: false };
+
   function paintStats(nodeCount, linkCount){
-    if (!statsEl) return;
     const now = performance.now();
 
     // Rolling 1s window: a single frame delta is far too jittery to read.
@@ -203,10 +209,6 @@
     while (frameTimes.length && now - frameTimes[0] > 1000) frameTimes.shift();
     const fps = frameTimes.length > 1 ? Math.round(frameTimes.length - 1) : 0;
 
-    // Repaint the text ~4x/sec. At 60fps the digits would otherwise flicker
-    // too fast to read, and it is needless DOM work.
-    if (now - lastStatsPaint < 250) return;
-    lastStatsPaint = now;
 
     // "Settled" means the energy has stopped *changing*, not that it fell
     // below some absolute number. Measured: with the real vault this layout
@@ -224,9 +226,21 @@
       const mean = energyHistory.reduce((a, b) => a + b, 0) / energyHistory.length;
       settled = mean > 0 && (hi - lo) / mean < 0.05;
     }
+    statsState = {
+      nodes: nodeCount, links: linkCount, fps,
+      settled, hasData: nodeCount > 0
+    };
+
+    if (!statsEl) return;
     const state = nodeCount === 0
       ? ['#F7B7CE', 'NO DATA']
       : (settled ? ['#B8E6C4', 'SIM STABLE'] : ['#F7E5A0', 'SIM SETTLING']);
+
+    // Repaint the text ~4x/sec. At 60fps the digits would otherwise flicker
+    // too fast to read, and it is needless DOM work. The values above are
+    // already up to date; only the rendering is throttled.
+    if (now - lastStatsPaint < 250) return;
+    lastStatsPaint = now;
 
     statsEl.innerHTML =
       'NODES: ' + nodeCount + '<br>' +
@@ -285,10 +299,10 @@
   // Exposed so the settling threshold can be calibrated against real vault
   // data instead of guessed -- a guessed threshold is what made the mic cut
   // Mackenzie off for three rounds.
-  window.__graphEnergy = () => ({
+  window.__graphStats = () => ({
+    ...statsState,
     energy: layoutEnergy,
-    perNode: lastNodes.length ? layoutEnergy / lastNodes.length : 0,
-    nodes: lastNodes.length
+    perNode: lastNodes.length ? layoutEnergy / lastNodes.length : 0
   });
 
   window.initGraph = initGraph;
