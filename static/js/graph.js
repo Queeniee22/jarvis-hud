@@ -26,8 +26,18 @@
 
   const HIT_RADIUS = 14; // canvas px, per the click-target spec
 
+  // Live stats readout. These used to be hardcoded mockup numbers (902 nodes,
+  // 3611 links, 60 fps) that never changed no matter what the vault held --
+  // decoration pretending to be instrumentation.
+  let statsEl = null;
+  let frameTimes = [];
+  let lastStatsPaint = 0;
+  let layoutEnergy = 0;
+  let energyHistory = [];
+
   function initGraph(){
     gc = document.getElementById('graph');
+    statsEl = document.getElementById('gstats');
     gx = gc.getContext('2d');
     GW = gc.width; GH = gc.height;
 
@@ -158,9 +168,13 @@
       b.vx -= fx; b.vy -= fy;
     }
 
+    // Total kinetic energy, so "SIM STABLE" reflects whether the layout has
+    // actually settled rather than being a fixed label.
+    layoutEnergy = 0;
     // centering + damping + integrate + clamp
     for(const n of nodes){
       const p = ensurePos(n.id);
+      layoutEnergy += Math.abs(p.vx) + Math.abs(p.vy);
       p.vx += (cx - p.x) * CENTER_PULL;
       p.vy += (cy - p.y) * CENTER_PULL;
       p.vx *= DAMPING; p.vy *= DAMPING;
@@ -178,6 +192,47 @@
     gx.textAlign = 'center';
     gx.fillStyle = color;
     gx.fillText(n.label, p.x, p.y - 12);
+  }
+
+  function paintStats(nodeCount, linkCount){
+    if (!statsEl) return;
+    const now = performance.now();
+
+    // Rolling 1s window: a single frame delta is far too jittery to read.
+    frameTimes.push(now);
+    while (frameTimes.length && now - frameTimes[0] > 1000) frameTimes.shift();
+    const fps = frameTimes.length > 1 ? Math.round(frameTimes.length - 1) : 0;
+
+    // Repaint the text ~4x/sec. At 60fps the digits would otherwise flicker
+    // too fast to read, and it is needless DOM work.
+    if (now - lastStatsPaint < 250) return;
+    lastStatsPaint = now;
+
+    // "Settled" means the energy has stopped *changing*, not that it fell
+    // below some absolute number. Measured: with the real vault this layout
+    // asymptotes at ~0.365 per node and never approaches zero -- constant
+    // repulsion balanced against springs leaves permanent residual motion.
+    // An absolute threshold (0.05 was the first guess) can never be reached,
+    // so the readout would have said SETTLING forever. A relative one works
+    // for any vault size and any equilibrium value.
+    const perNode = nodeCount ? layoutEnergy / nodeCount : 0;
+    energyHistory.push(perNode);
+    if (energyHistory.length > 12) energyHistory.shift();
+    let settled = false;
+    if (energyHistory.length === 12) {
+      const lo = Math.min(...energyHistory), hi = Math.max(...energyHistory);
+      const mean = energyHistory.reduce((a, b) => a + b, 0) / energyHistory.length;
+      settled = mean > 0 && (hi - lo) / mean < 0.05;
+    }
+    const state = nodeCount === 0
+      ? ['#F7B7CE', 'NO DATA']
+      : (settled ? ['#B8E6C4', 'SIM STABLE'] : ['#F7E5A0', 'SIM SETTLING']);
+
+    statsEl.innerHTML =
+      'NODES: ' + nodeCount + '<br>' +
+      'LINKS: ' + linkCount + '<br>' +
+      'FPS: ' + fps + '<br>' +
+      '<span style="color:' + state[0] + '">■ ' + state[1] + '</span>';
   }
 
   function renderGraph(data){
@@ -213,13 +268,28 @@
       // currently-open notes are legible regardless of what's underneath.
       if (openNodeId && openNodeId !== hoveredId) drawNodeLabel(nodes, openNodeId, 'rgba(184,230,196,0.95)');
       if (hoveredId) drawNodeLabel(nodes, hoveredId, 'rgba(247,183,206,0.95)');
+      paintStats(nodes.length, links.length);
       return;
     }
 
     /* fallback: say why if we know, otherwise we are genuinely still loading */
     if (notice) renderNotice(notice);
     else renderSpinner();
+    // Zeros, not stale counts: with no graph there is nothing to report, and
+    // leaving the last vault's numbers up would misdescribe an empty screen.
+    lastNodes = [];
+    energyHistory = [];
+    paintStats(0, 0);
   }
+
+  // Exposed so the settling threshold can be calibrated against real vault
+  // data instead of guessed -- a guessed threshold is what made the mic cut
+  // Mackenzie off for three rounds.
+  window.__graphEnergy = () => ({
+    energy: layoutEnergy,
+    perNode: lastNodes.length ? layoutEnergy / lastNodes.length : 0,
+    nodes: lastNodes.length
+  });
 
   window.initGraph = initGraph;
   window.renderGraph = renderGraph;
