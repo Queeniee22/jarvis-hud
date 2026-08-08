@@ -22,6 +22,10 @@ async def _startup():
     # Session-start: read the vault, then greet (vault CLAUDE.md protocol).
     asyncio.create_task(boot.run(hub))
 
+@app.on_event("shutdown")
+async def _shutdown():
+    await hub.close()
+
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")
 app.mount("/fonts", StaticFiles(directory=config.STATIC / "fonts"), name="fonts")
@@ -47,11 +51,13 @@ def index():
 @app.websocket("/ws")
 async def ws(sock: WebSocket):
     await sock.accept()
-    hub.add(sock)
+    # Say hello before registering: from add() onward the hub owns this
+    # socket and is the only thing allowed to write to it.
     await sock.send_json({"type": "hello", "app": "jarvis"})
-    # Catch this client up on state it missed -- services broadcast on slow
-    # cycles, and the startup offline notices fire before anyone is listening.
-    await hub.replay(sock)
+    # Registering also queues the state this client missed -- services
+    # broadcast on slow cycles, and the startup offline notices fire before
+    # anyone is listening.
+    hub.add(sock)
     try:
         while True:
             try:
@@ -85,4 +91,8 @@ async def ws(sock: WebSocket):
             elif msg.get("type") == "tab":
                 pass  # purely client-side; ignore server-side
     except WebSocketDisconnect:
+        pass
+    finally:
+        # Any exit path, not just a clean disconnect -- otherwise the client
+        # and its writer task leak for the life of the process.
         hub.remove(sock)
