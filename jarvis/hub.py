@@ -5,7 +5,25 @@ import asyncio
 # 300s, and the offline notices once at startup, before any browser has
 # connected. Without a catch-up the first client sees empty panels and no
 # explanation, and a browser refresh waits minutes for the next cycle.
-_STATEFUL = ("status", "calendar", "vault", "graph", "vitals")
+# Inverted deliberately: list what is a *moment*, and treat everything else as
+# state worth replaying. An opt-in list of stateful types silently failed three
+# times -- calendar, the vault graph, and the skill list each broadcast once at
+# startup, before any browser was listening, and the panel just sat empty with
+# no error. Transients are a small, stable set; new panels are almost always
+# state, so the safe default is to replay.
+_TRANSIENT = (
+    "hello",      # per-connection handshake
+    "mic",        # live amplitude
+    "speak",      # live amplitude
+    "chat",       # conversation deltas -- a fresh page must not replay old talk
+    "heard",      # the fading caption
+    "thinking",   # tied to one in-flight turn
+    "ask",        # option cards belong to the turn that raised them
+    "skill",      # a single run's progress, unlike "skills" (the list)
+    "note",       # opened note contents
+    "note_saved",
+    "note_error",
+)
 
 
 def _state_key(message: dict):
@@ -17,7 +35,7 @@ def _state_key(message: dict):
     client keeps when its backlog has to be collapsed.
     """
     kind = message.get("type")
-    if kind not in _STATEFUL:
+    if not kind or kind in _TRANSIENT:
         return None
     return (kind, message.get("service")) if kind == "status" else (kind, None)
 

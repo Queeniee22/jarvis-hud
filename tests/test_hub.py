@@ -197,3 +197,44 @@ async def test_close_stops_the_writers(hub):
     await asyncio.sleep(0)
 
     assert a.sent == [{"type": "vitals", "cpu": 1}]
+
+
+async def test_a_new_panel_type_is_replayed_by_default():
+    """Regression, three times over: calendar, the vault graph and the skill
+    list each broadcast once at startup -- before any browser connected -- and
+    their panel sat empty with no error, because the type had not been added
+    to an opt-in stateful list. The default must be "replay"; only moments
+    opt out."""
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "some_future_panel", "value": 42})
+
+    late = FakeWS()
+    hub.add(late)
+    await hub.drain()
+
+    assert any(m.get("type") == "some_future_panel" for m in late.sent), \
+        "a message type nobody classified must still reach a late client"
+
+
+async def test_the_skill_list_reaches_a_late_client():
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "skills", "skills": [{"id": "a.md", "name": "Morning Brief"}]})
+
+    late = FakeWS()
+    hub.add(late)
+    await hub.drain()
+
+    assert any(m.get("type") == "skills" for m in late.sent)
+
+
+async def test_a_single_skill_run_is_not_replayed():
+    """"skills" is the list (state); "skill" is one run's progress (a moment).
+    Replaying a stale 'running' would show a skill running that finished."""
+    hub = ConnectionHub()
+    await hub.broadcast({"type": "skill", "state": "running", "id": "a.md"})
+
+    late = FakeWS()
+    hub.add(late)
+    await hub.drain()
+
+    assert not any(m.get("type") == "skill" for m in late.sent)
