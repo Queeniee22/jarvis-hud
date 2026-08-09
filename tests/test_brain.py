@@ -184,12 +184,19 @@ async def _run_ask(monkeypatch, source):
     return hub, reply, spoken
 
 
-async def test_voice_turn_writes_nothing_to_chat(monkeypatch):
+async def test_voice_turn_is_spoken_and_also_written(monkeypatch):
+    """Policy changed deliberately. A spoken turn used to write nothing to the
+    panel; Jarvis's replies are now always written so there is a scrollback of
+    what he said. Only Mackenzie's own words stay out of it."""
     hub, reply, spoken = await _run_ask(monkeypatch, "voice")
     assert reply == "hello there"
-    assert [m for m in hub.msgs if m.get("type") == "chat"] == [], \
-        "a spoken turn must not put any text in the chat panel"
     assert spoken == ["hello there"], "it must still answer out loud"
+
+    chat = [m for m in hub.msgs if m.get("type") == "chat"]
+    assert any(m.get("delta") == "hello there" for m in chat), \
+        "a spoken reply must also appear in the chat panel"
+    assert all(m.get("role") == "jarvis" for m in chat), \
+        "ask() must never write Mackenzie's own words to the panel"
 
 
 async def test_typed_turn_still_streams_text(monkeypatch):
