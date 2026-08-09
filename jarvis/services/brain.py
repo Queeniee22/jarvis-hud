@@ -165,17 +165,17 @@ async def iter_lines(stream):
 async def ask(hub, text: str, source: str = "text"):
     """Ask Claude and stream the reply.
 
-    `source` is the modality the request arrived on, and it decides how the
-    answer comes back. A spoken question gets a spoken answer only: nothing
-    is written to the chat panel, so talking to Jarvis leaves no transcript
-    clutter. A typed question still streams text (and is also spoken).
+    `source` is the modality the request arrived on. It decides whether the
+    answer is *spoken*, not whether it is written: everything Jarvis says is
+    written to the chat panel either way, so there is always a scrollback of
+    his replies. What Mackenzie said is still kept out of the panel -- that
+    shows as the fading caption under the waveform instead.
     """
     voice_only = source == "voice"
 
     async def emit(message):
-        """Chat-panel output, suppressed entirely for spoken turns."""
-        if not voice_only:
-            await hub.broadcast(message)
+        """Chat-panel output. Jarvis's side of a spoken turn is written too."""
+        await hub.broadcast(message)
 
     # Visible for every turn, spoken or typed. The audio filler only helps if
     # you happen to be listening; this is the at-a-glance answer to "did it
@@ -261,8 +261,8 @@ async def ask(hub, text: str, source: str = "text"):
             {"type": "chat", "role": "jarvis", "delta": ERROR_REPLY, "done": False}
         )
         if voice_only:
-            # Nothing was written to chat, so without this a failed spoken
-            # turn would be completely silent and invisible.
+            # The error is in the chat panel, but a spoken turn means he may
+            # not be looking at it -- raise a service status too.
             await hub.broadcast({
                 "type": "status", "service": "brain", "state": "error",
                 "detail": "ask failed",
@@ -300,7 +300,7 @@ async def ask(hub, text: str, source: str = "text"):
             if spoken:
                 asyncio.create_task(voice.speak(hub, spoken))
             elif voice_only:
-                # A spoken turn writes nothing to the panel, so a failure with
-                # no reply would be pure silence. Say the error out loud.
+                # He asked out loud and there is no reply to read back. Say
+                # the error rather than leaving the question hanging.
                 asyncio.create_task(voice.speak(hub, ERROR_REPLY))
     return reply

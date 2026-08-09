@@ -183,3 +183,50 @@ async def test_thinking_is_cleared_even_when_the_turn_fails(monkeypatch):
 
     flags = [m["active"] for m in hub.msgs if m.get("type") == "thinking"]
     assert flags and flags[-1] is False, "a failed turn must still clear the indicator"
+
+
+async def test_spoken_replies_are_also_written_to_the_chat_panel(monkeypatch):
+    """Jarvis's side of a spoken turn belongs in the panel too, so there is
+    a scrollback of what he said. What Mackenzie said still does not."""
+    from jarvis.services import brain
+
+    class FakeProc:
+        returncode = 0
+        def __init__(self):
+            self.stdout = self
+            self.stderr = self
+            self._lines = [
+                b'{"type":"assistant","message":{"content":[{"type":"text","text":"all done"}]}}'
+            ]
+        async def read(self):
+            return b""
+        def __aiter__(self):
+            return self
+        async def __anext__(self):
+            if self._lines:
+                return self._lines.pop(0)
+            raise StopAsyncIteration
+        def kill(self):
+            pass
+        async def wait(self):
+            return 0
+
+    proc = FakeProc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", lambda *a, **k: _wrap(proc))
+    monkeypatch.setattr(brain, "iter_lines", lambda stdout: proc)
+
+    async def no_speak(hub, text):
+        pass
+    monkeypatch.setattr(brain.voice, "speak", no_speak)
+    monkeypatch.setattr(brain.voice, "speak_ack", lambda hub: no_speak(hub, ""))
+
+    hub = StubHub()
+    await brain.ask(hub, "did it work?", source="voice")
+
+    jarvis_lines = [m for m in hub.msgs
+                    if m.get("type") == "chat" and m.get("role") == "jarvis"]
+    assert any("all done" in m.get("delta", "") for m in jarvis_lines), \
+        "a spoken reply must still be written to the chat panel"
+    # the user's own words are never put in the panel by ask()
+    assert not [m for m in hub.msgs
+                if m.get("type") == "chat" and m.get("role") == "you"]
