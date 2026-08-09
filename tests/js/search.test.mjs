@@ -124,3 +124,61 @@ describe('search availability', () => {
     assert.match(count.textContent, /1 match$/, 'the pending query should resolve');
   }));
 });
+
+describe('search clear button', () => {
+  test('is hidden until there is something to clear', () => withHud(({ window, document }) => {
+    const clear = document.getElementById('graphSearchClear');
+    assert.ok(clear, 'the clear button must exist');
+    assert.ok(clear.classList.contains('hide'), 'an x on an empty box is noise');
+
+    const box = document.getElementById('graphSearch');
+    box.value = 'debug';
+    box.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.ok(!clear.classList.contains('hide'), 'appears once text is typed');
+  }));
+
+  test('clicking it empties the box and drops the filter', () => withHud(({ window, document }) => {
+    window.setGraphNodes(VAULT.nodes);
+    const box = document.getElementById('graphSearch');
+    const clear = document.getElementById('graphSearchClear');
+    const count = document.getElementById('graphSearchCount');
+
+    box.value = 'debug';
+    box.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal(window.setGraphFilter('debug'), 1);
+
+    clear.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+    assert.equal(box.value, '', 'the box must be empty');
+    assert.deepEqual(Array.from(window.graphMatches()), [], 'the graph filter must be dropped');
+    assert.ok(count.classList.contains('hide'), 'the match count must go away');
+    assert.ok(clear.classList.contains('hide'), 'the button hides itself again');
+  }));
+
+  test('keeps focus in the box so a new search can be typed straight away', () => withHud(({ window, document }) => {
+    const box = document.getElementById('graphSearch');
+    const clear = document.getElementById('graphSearchClear');
+    box.value = 'debug';
+    box.dispatchEvent(new window.Event('input', { bubbles: true }));
+    clear.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.equal(document.activeElement, box);
+  }));
+
+  test('mousedown does not blur the field before the click lands', () => withHud(({ window, document }) => {
+    const clear = document.getElementById('graphSearchClear');
+    const evt = new window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    clear.dispatchEvent(evt);
+    assert.ok(evt.defaultPrevented, 'default must be prevented or focus is lost mid-click');
+  }));
+
+  test('Escape still clears, same as the button', () => withHud(({ window, document }) => {
+    window.setGraphNodes(VAULT.nodes);
+    const box = document.getElementById('graphSearch');
+    const clear = document.getElementById('graphSearchClear');
+    box.value = '#programming';
+    box.dispatchEvent(new window.Event('input', { bubbles: true }));
+    box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(box.value, '');
+    assert.ok(clear.classList.contains('hide'));
+  }));
+});

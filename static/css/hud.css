@@ -50,9 +50,8 @@ canvas{display:block;max-width:96%;max-height:96%;}
   bottom:16px;left:0;right:0;text-align:center;text-shadow:0 0 10px #F7B7CE;letter-spacing:2px;z-index:2;}
 .bignum small{font-size:7px;display:block;margin-top:6px;color:#C9B6E4;}
 /* graph search bar */
-.gsearch{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:3;
-  font-family:"Pixelify Sans";font-size:13px;color:#E9C7DE;background:#2C1A3088;
-  border:2px solid #5A3A5E;border-radius:10px;padding:7px 16px;width:60%;text-align:center;}
+.gsearchwrap{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  z-index:3;width:60%;display:flex;align-items:center;}
 .gstats{position:absolute;top:14px;left:14px;z-index:3;font-size:11px;color:#C9B6E4;line-height:1.6;}
 
 /* Graph tab layout: canvas + note panel side by side. Both children are
@@ -255,10 +254,25 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
 /* Graph search. Was a <div> that looked like an input but could not be typed
    in; now a real field, styled to match rather than inheriting browser chrome. */
 input.gsearch{
-  font-family:"Pixelify Sans"; font-size:14px; color:#F7D9E8;
+  flex:1; width:100%; font-family:"Pixelify Sans"; font-size:14px; color:#F7D9E8;
   background:#2C1A30cc; border:2px solid #5A3A5E; border-radius:10px;
-  padding:7px 14px; outline:none; transition:border-color .15s ease, box-shadow .15s ease;
+  /* right padding leaves room for the clear button to sit inside the field */
+  padding:7px 34px 7px 14px; outline:none; text-align:center;
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
+
+/* Clear button, inside the field's right edge. Only rendered when there is
+   something to clear -- an always-visible x on an empty box is noise. */
+.gsearchclear{
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  width:20px; height:20px; padding:0; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  font-family:"Pixelify Sans"; font-size:17px; color:#C9B6E4;
+  background:transparent; border:none; border-radius:50%; cursor:pointer;
+  transition:color .12s ease, background .12s ease;
+}
+.gsearchclear:hover{color:#fff; background:#F76A9A;}
+.gsearchclear.hide{display:none;}
 input.gsearch::placeholder{color:#A98BB0;}
 input.gsearch:focus{border-color:var(--blush); box-shadow:0 0 14px #F76A9A55;}
 .gsearchcount{

@@ -149,10 +149,13 @@
      looked like a search field and could not be typed in. */
   const graphSearch = document.getElementById('graphSearch');
   const graphSearchCount = document.getElementById('graphSearchCount');
+  const graphSearchClear = document.getElementById('graphSearchClear');
   function runGraphSearch(){
     if (!graphSearch || !window.setGraphFilter) return;
     const q = graphSearch.value;
     const n = window.setGraphFilter(q);
+    // Nothing typed means nothing to clear, so the button stays out of sight.
+    if (graphSearchClear) graphSearchClear.classList.toggle('hide', !q);
     if (!graphSearchCount) return;
     if (!q.trim()) {
       graphSearchCount.classList.add('hide');
@@ -162,12 +165,26 @@
       graphSearchCount.classList.toggle('none', n === 0);
     }
   }
+  function clearGraphSearch(){
+    if (!graphSearch) return;
+    graphSearch.value = '';
+    runGraphSearch();
+  }
+  if (graphSearchClear) {
+    graphSearchClear.addEventListener('click', () => {
+      clearGraphSearch();
+      // Keep focus in the box: clearing is usually the start of a new
+      // search, not the end of searching.
+      graphSearch.focus();
+    });
+    // The button sits inside the field; a mousedown would blur it first.
+    graphSearchClear.addEventListener('mousedown', (e) => e.preventDefault());
+  }
   if (graphSearch) {
     graphSearch.addEventListener('input', runGraphSearch);
     graphSearch.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        graphSearch.value = '';
-        runGraphSearch();
+        clearGraphSearch();
         graphSearch.blur();
       } else if (e.key === 'Enter') {
         // One match is unambiguous, so open it rather than making him find
@@ -468,7 +485,7 @@
 
   // Debug handle: lets the UI be exercised without a live conversation.
   window.__hud = {
-    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, ago, send,
+    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, clearGraphSearch, ago, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
     noteState: () => noteState,
   };
