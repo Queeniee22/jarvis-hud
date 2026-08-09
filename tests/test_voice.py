@@ -78,10 +78,11 @@ async def test_speak_ack_uses_cache_and_does_not_refetch(monkeypatch):
         calls.append(text)
         return np.zeros(1600, dtype="float32")
     monkeypatch.setattr(voice, "_fetch_pcm", fake_fetch)
+    monkeypatch.setattr(voice, "_quota_gone", False, raising=False)
     monkeypatch.setattr(voice, "_ack_cache", {}, raising=False)
 
     played = []
-    async def fake_play(hub, pcm): played.append(pcm)
+    async def fake_play(hub, pcm, samplerate=16000): played.append(pcm)
     monkeypatch.setattr(voice, "_play", fake_play)
 
     class Hub:
@@ -119,3 +120,109 @@ def test_half_duplex_gate_and_barge_in(monkeypatch):
     # barge-in clears everything immediately
     voice.stop_speaking()
     assert voice.is_speaking() is False, "interrupt must reopen the mic at once"
+
+
+def test_quota_exhaustion_is_recognised_not_mistaken_for_a_bad_key():
+    """ElevenLabs returns 401 for an exhausted quota, which reads as an auth
+    failure and sent this project hunting for a broken API key. The body is
+    what actually distinguishes the two."""
+    from jarvis.services import voice
+
+    class QuotaResp:
+        status_code = 401
+        def json(self):
+            return {"detail": {"status": "quota_exceeded", "code": "quota_exceeded",
+                               "message": "You have 0 credits remaining"}}
+
+    class BadKeyResp:
+        status_code = 401
+        def json(self):
+            return {"detail": "Invalid API key"}
+
+    assert voice._is_quota_error(QuotaResp()) is True
+    assert voice._is_quota_error(BadKeyResp()) is False
+
+
+def test_a_real_auth_failure_is_not_treated_as_quota():
+    from jarvis.services import voice
+
+    class Resp:
+        status_code = 403
+        def json(self): return {"detail": {"status": "forbidden"}}
+
+    assert voice._is_quota_error(Resp()) is False
+
+
+async def test_speech_falls_back_to_the_local_voice_when_credits_run_out(monkeypatch):
+    """Going silent because a monthly quota ran out is a bad failure mode for
+    an assistant you talk to."""
+    import numpy as np
+    from jarvis.services import voice
+
+    monkeypatch.setattr(voice.config, "ELEVENLABS_API_KEY", "abc")
+    monkeypatch.setattr(voice.config, "VOICE_ID", "xyz")
+    monkeypatch.setattr(voice, "_quota_gone", False, raising=False)
+
+    def out_of_credits(text):
+        raise voice.QuotaExhausted("no credits")
+    monkeypatch.setattr(voice, "_fetch_pcm", out_of_credits)
+
+    local_calls = []
+    def fake_local(text):
+        local_calls.append(text)
+        return np.zeros(2205, dtype="float32"), 22050
+    monkeypatch.setattr(voice, "_local_pcm", fake_local)
+
+    class Hub:
+        def __init__(self): self.msgs = []
+        async def broadcast(self, m): self.msgs.append(m)
+
+    hub = Hub()
+    pcm, rate = await voice.synthesize(hub, "hello")
+
+    assert pcm is not None, "must still produce audio"
+    assert rate == 22050, "the local voice's own sample rate must be carried"
+    assert local_calls == ["hello"]
+    degraded = [m for m in hub.msgs if m.get("state") == "degraded"]
+    assert degraded, "the HUD must say the voice is degraded, not silently switch"
+
+
+async def test_the_cloud_is_not_retried_once_the_quota_is_known_gone(monkeypatch):
+    """The quota does not come back this month; a failed round-trip before
+    every line is pure latency."""
+    import numpy as np
+    from jarvis.services import voice
+
+    monkeypatch.setattr(voice.config, "ELEVENLABS_API_KEY", "abc")
+    monkeypatch.setattr(voice.config, "VOICE_ID", "xyz")
+    monkeypatch.setattr(voice, "_quota_gone", True, raising=False)
+
+    cloud_calls = []
+    monkeypatch.setattr(voice, "_fetch_pcm", lambda t: cloud_calls.append(t))
+    monkeypatch.setattr(voice, "_local_pcm",
+                        lambda t: (np.zeros(100, dtype="float32"), 22050))
+
+    class Hub:
+        async def broadcast(self, m): pass
+
+    await voice.synthesize(Hub(), "hi")
+    assert cloud_calls == [], "must not call ElevenLabs again once quota is gone"
+
+
+async def test_local_failure_too_reports_an_error_rather_than_hanging(monkeypatch):
+    from jarvis.services import voice
+
+    monkeypatch.setattr(voice.config, "ELEVENLABS_API_KEY", "")
+    monkeypatch.setattr(voice.config, "VOICE_ID", "")
+    def boom(text):
+        raise RuntimeError("no audio device")
+    monkeypatch.setattr(voice, "_local_pcm", boom)
+
+    class Hub:
+        def __init__(self): self.msgs = []
+        async def broadcast(self, m): self.msgs.append(m)
+
+    hub = Hub()
+    pcm, rate = await voice.synthesize(hub, "hi")
+    assert pcm is None and rate is None
+    assert any(m.get("state") == "error" for m in hub.msgs)

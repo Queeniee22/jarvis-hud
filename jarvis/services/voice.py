@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import random
 import time
 
@@ -69,6 +70,73 @@ def frame_levels(pcm, samplerate=16000, frame_sec=0.1) -> list:
     return levels
 
 
+class QuotaExhausted(Exception):
+    """ElevenLabs has no credits left this month."""
+
+
+# Once the monthly quota is gone it stays gone until it resets, so there is no
+# point paying a failed round-trip before every single line. Set on the first
+# quota error and cleared only on restart.
+_quota_gone = False
+
+
+def _is_quota_error(resp) -> bool:
+    """ElevenLabs reports an exhausted quota as 401 Unauthorized, which reads
+    like a bad API key and sent this project looking in the wrong place. The
+    body is what actually distinguishes the two."""
+    if resp.status_code not in (401, 429):
+        return False
+    try:
+        detail = resp.json().get("detail")
+    except Exception:
+        return False
+    # `detail` is a dict for structured errors but a bare string for others
+    # ("Invalid API key"). Assuming a dict turned a genuine auth failure into
+    # an AttributeError inside the fetch path.
+    if isinstance(detail, dict):
+        haystack = f"{detail.get('status', '')} {detail.get('code', '')}"
+    else:
+        haystack = str(detail or "")
+    return "quota" in haystack.lower()
+
+
+def _local_pcm(text: str):
+    """Synthesize with the Windows built-in voice. Free, offline, unlimited.
+
+    Rendered to a file rather than spoken directly so it goes through the same
+    playback path as ElevenLabs -- which is what keeps the core sphere
+    reacting to it instead of the HUD looking dead while Jarvis talks.
+    """
+    import tempfile
+    import wave
+
+    import pyttsx3
+
+    engine = pyttsx3.init()
+    # Prefer a female voice to match the ElevenLabs one; fall back to whatever
+    # the machine has rather than failing over a cosmetic preference.
+    for v in engine.getProperty("voices"):
+        if "zira" in v.name.lower() or "female" in str(getattr(v, "gender", "")).lower():
+            engine.setProperty("voice", v.id)
+            break
+    engine.setProperty("rate", 175)
+
+    path = tempfile.mktemp(suffix=".wav")
+    try:
+        engine.save_to_file(text, path)
+        engine.runAndWait()
+        with wave.open(path, "rb") as w:
+            rate = w.getframerate()
+            frames = w.readframes(w.getnframes())
+        pcm = np.frombuffer(frames, dtype=np.int16).astype("float32") / 32768.0
+        return pcm, rate
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _fetch_pcm(text: str) -> np.ndarray:
     """Blocking HTTP call to ElevenLabs TTS -- run via asyncio.to_thread.
 
@@ -92,6 +160,11 @@ def _fetch_pcm(text: str) -> np.ndarray:
         },
         timeout=30,
     )
+    if _is_quota_error(r):
+        raise QuotaExhausted(
+            "ElevenLabs monthly quota is used up -- speaking with the local "
+            "Windows voice until it resets"
+        )
     r.raise_for_status()
     return np.frombuffer(r.content, dtype=np.int16).astype("float32") / 32768.0
 
@@ -109,13 +182,12 @@ ACK_PHRASES = [
 _ack_cache = {}
 
 
-async def _prewarm_one(phrase: str):
+async def _prewarm_one(hub, phrase: str):
     if phrase in _ack_cache:
         return
-    try:
-        _ack_cache[phrase] = await asyncio.to_thread(_fetch_pcm, phrase)
-    except Exception as e:
-        log.warning("voice: could not prewarm ack %r: %s", phrase, e)
+    pcm, rate = await synthesize(hub, phrase)
+    if pcm is not None:
+        _ack_cache[phrase] = (pcm, rate)
 
 
 async def prewarm_acks(hub=None):
@@ -124,21 +196,23 @@ async def prewarm_acks(hub=None):
     Without this the first acknowledgement pays a ~0.6s TTS fetch, which is
     exactly the dead air it exists to cover.
     """
-    if not available():
-        if hub is not None:
-            await hub.broadcast({
-                "type": "status", "service": "voice", "state": "offline",
-                "detail": "missing ELEVENLABS_API_KEY or VOICE_ID",
-            })
-        return
     for phrase in ACK_PHRASES:
-        await _prewarm_one(phrase)
+        await _prewarm_one(hub, phrase)
     log.info("voice: prewarmed %d ack phrases", len(_ack_cache))
     if hub is not None:
-        # Prewarming proves the key, the voice id and the network all work --
-        # a better health signal than merely having the settings present.
-        state = "online" if _ack_cache else "error"
-        await hub.broadcast({"type": "status", "service": "voice", "state": state})
+        # Prewarming proves synthesis end-to-end, which is a better health
+        # signal than merely having the settings present. "degraded" says the
+        # voice works but is the local one -- distinct from both fine and dead.
+        if not _ack_cache:
+            state, detail = "error", "no voice available"
+        elif _quota_gone or not available():
+            state, detail = "degraded", "using the local Windows voice"
+        else:
+            state, detail = "online", None
+        msg = {"type": "status", "service": "voice", "state": state}
+        if detail:
+            msg["detail"] = detail
+        await hub.broadcast(msg)
 
 
 async def speak_ack(hub):
@@ -152,14 +226,15 @@ async def speak_ack(hub):
         return
     phrase = random.choice(ACK_PHRASES)
     if phrase not in _ack_cache:
-        await _prewarm_one(phrase)
-    pcm = _ack_cache.get(phrase)
-    if pcm is None:
+        await _prewarm_one(hub, phrase)
+    cached = _ack_cache.get(phrase)
+    if cached is None:
         return
-    await _play(hub, pcm)
+    pcm, rate = cached
+    await _play(hub, pcm, rate)
 
 
-async def _play(hub, pcm):
+async def _play(hub, pcm, samplerate: int = SAMPLERATE):
     """Play `pcm` and stream its amplitude so the core sphere reacts."""
     try:
         import sounddevice as sd
@@ -170,8 +245,8 @@ async def _play(hub, pcm):
     async with _lock:
         try:
             _speaking = True
-            sd.play(pcm, SAMPLERATE)
-            for lvl in frame_levels(pcm, SAMPLERATE, FRAME_SEC):
+            sd.play(pcm, samplerate)
+            for lvl in frame_levels(pcm, samplerate, FRAME_SEC):
                 if not _speaking:
                     break  # interrupted -- stop streaming amplitude too
                 await hub.broadcast({"type": "speak", "level": lvl, "active": True})
@@ -185,25 +260,42 @@ async def _play(hub, pcm):
             await hub.broadcast({"type": "speak", "level": 0.0, "active": False})
 
 
-async def speak(hub, text: str):
-    if not available():
+async def synthesize(hub, text: str):
+    """Audio for `text`, from ElevenLabs if it can, locally if it cannot.
+
+    Returns (pcm, samplerate) or (None, None). Going quiet because a monthly
+    quota ran out is a bad failure mode for an assistant you talk to -- the
+    local Windows voice is worse-sounding but always available.
+    """
+    global _quota_gone
+
+    if available() and not _quota_gone:
+        try:
+            return await asyncio.to_thread(_fetch_pcm, text), SAMPLERATE
+        except QuotaExhausted as e:
+            _quota_gone = True
+            log.warning("voice: %s", e)
+            await hub.broadcast({
+                "type": "status", "service": "voice", "state": "degraded",
+                "detail": str(e),
+            })
+        except Exception as e:
+            log.warning("voice: tts fetch failed, falling back to local: %s", e)
+
+    try:
+        pcm, rate = await asyncio.to_thread(_local_pcm, text)
+        return pcm, rate
+    except Exception as e:
+        log.warning("voice: local synthesis failed too: %s", e)
         await hub.broadcast({
-            "type": "status", "service": "voice", "state": "offline",
-            "detail": "missing ELEVENLABS_API_KEY or VOICE_ID",
+            "type": "status", "service": "voice", "state": "error",
+            "detail": f"no voice available: {e}",
         })
-        return
+        return None, None
 
-    try:
-        import sounddevice as sd
-    except Exception as e:
-        await hub.broadcast({"type": "status", "service": "voice", "state": "offline", "detail": f"import: {e}"})
-        return
 
-    try:
-        pcm = await asyncio.to_thread(_fetch_pcm, text)
-    except Exception as e:
-        log.warning("voice: tts fetch failed: %s", e)
-        await hub.broadcast({"type": "status", "service": "voice", "state": "error", "detail": str(e)})
+async def speak(hub, text: str):
+    pcm, rate = await synthesize(hub, text)
+    if pcm is None:
         return
-
-    await _play(hub, pcm)
+    await _play(hub, pcm, rate)

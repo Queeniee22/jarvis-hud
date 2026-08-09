@@ -222,6 +222,10 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
 .dot.svc{background:#C9B6E4; box-shadow:0 0 6px #C9B6E4;}          /* unknown */
 .dot.svc.online{background:#B8E6C4; box-shadow:0 0 7px #B8E6C4;}
 .dot.svc.offline{background:#D8C4D0; box-shadow:none;}              /* known-off, not alarming */
+/* Degraded: working, but not the way you configured it -- e.g. speaking with
+   the local voice because the cloud quota ran out. Distinct from both fine
+   and broken, because the fix is different. */
+.dot.svc.degraded{background:#F7E5A0; box-shadow:0 0 7px #F7E5A0;}
 .dot.svc.error{background:#F76A9A; box-shadow:0 0 9px #F76A9A; animation:blink 1.4s infinite;}
 
 /* Service tooltip. The native title= attribute was useless here: it repeated

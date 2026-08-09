@@ -213,7 +213,7 @@
     if (!row) return;
     const dot = row.querySelector('.dot');
     const label = row.querySelector('.svcstate');
-    dot.classList.remove('online', 'offline', 'error');
+    dot.classList.remove('online', 'offline', 'error', 'degraded');
     const state = m.state === 'ready' ? 'online' : m.state;
     if (state) dot.classList.add(state);
     if (label) label.textContent = state || '—';
