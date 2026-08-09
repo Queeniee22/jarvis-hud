@@ -132,3 +132,25 @@ describe('service tooltip', () => {
     assert.ok(parseFloat(tip.style.top) >= 8, 'must not be positioned above the viewport');
   }));
 });
+
+describe('the big readout under the sphere', () => {
+  test('shows the real word count, formatted with separators', () => withHud(({ window, document }) => {
+    window.__hud.applyVault({ type: 'vault', notes: 23, links: 71, words: 48213 });
+    const text = document.getElementById('bigNum').textContent;
+    assert.match(text, /48,213/);
+    assert.match(text, /WORDS INDEXED/);
+    assert.doesNotMatch(text, /135,000/, 'the mockup placeholder must be gone');
+  }));
+
+  test('an empty vault reads zero rather than a leftover count', () => withHud(({ window, document }) => {
+    window.__hud.applyVault({ type: 'vault', notes: 12, links: 5, words: 9000 });
+    window.__hud.applyVault({ type: 'vault', notes: 0, links: 0, words: 0 });
+    assert.match(document.getElementById('bigNum').textContent, /^0/);
+  }));
+
+  test('a payload with no word count leaves the readout alone', () => withHud(({ window, document }) => {
+    window.__hud.applyVault({ type: 'vault', notes: 23, links: 71, words: 48213 });
+    window.__hud.applyVault({ type: 'vault', notes: 23, links: 71 });   // e.g. an older server
+    assert.match(document.getElementById('bigNum').textContent, /48,213/);
+  }));
+});

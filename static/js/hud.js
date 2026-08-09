@@ -115,6 +115,13 @@
     if (typeof m.notes === 'number') items.push(`Notes: ${m.notes}`);
     if (typeof m.links === 'number') items.push(`Links: ${m.links}`);
     if (m.lastNote) items.push(`Last edited: ${m.lastNote}${m.lastEditedMs ? ' · ' + ago(m.lastEditedMs) : ''}`);
+
+    // The big readout under the sphere. It shipped as a hardcoded 135,000
+    // from the mockup -- a number that described nothing.
+    const big = document.getElementById('bigNum');
+    if (big && typeof m.words === 'number') {
+      big.innerHTML = m.words.toLocaleString() + '<small>WORDS INDEXED</small>';
+    }
     if (!items.length) items.push('vault empty');
     list.innerHTML = items.map((text, i) =>
       `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${text}</li>`

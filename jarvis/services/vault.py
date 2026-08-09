@@ -106,6 +106,10 @@ def read_note_meta(path: str) -> dict:
     return {
         "links": [m.group(1).strip() for m in WIKILINK_RE.finditer(text)],
         "mtime": (data.get("stat") or {}).get("mtime") or 0,
+        # Free here -- the content is already in hand for the wikilinks. Note
+        # count alone is too small a number to be worth the big readout, and
+        # size in bytes says more about images than about what he has written.
+        "words": len(text.split()),
     }
 
 
@@ -210,10 +214,12 @@ async def run(hub, interval: float = 60.0):
             _known_paths = set(files)
             links: dict[str, list[str]] = {}
             mtimes: dict[str, int] = {}
+            words = 0
             for f in files:
                 meta = await asyncio.to_thread(read_note_meta, f)
                 links[f] = meta["links"]
                 mtimes[f] = meta["mtime"]
+                words += meta.get("words", 0)
 
             graph = build_graph(files, links)
             await hub.broadcast(graph)
@@ -229,6 +235,7 @@ async def run(hub, interval: float = 60.0):
                 "folders": len({f.split("/", 1)[0] for f in files if "/" in f}),
                 "lastNote": _title(newest) if newest else None,
                 "lastEditedMs": mtimes.get(newest) if newest else None,
+                "words": words,
             })
             if online is not True:
                 await hub.broadcast({"type": "status", "service": "vault", "state": "online"})
