@@ -216,3 +216,11 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
   0%,100%{opacity:.25; transform:scale(.8);}
   50%{opacity:1; transform:scale(1.15);}
 }
+
+/* Service health. Replaces a hardcoded "7 online" that was true of nothing. */
+#serviceList li{justify-content:flex-start;}
+#serviceList .svcstate{margin-left:auto; font-size:12px; color:var(--deep); opacity:.75;}
+.dot.svc{background:#C9B6E4; box-shadow:0 0 6px #C9B6E4;}          /* unknown */
+.dot.svc.online{background:#B8E6C4; box-shadow:0 0 7px #B8E6C4;}
+.dot.svc.offline{background:#D8C4D0; box-shadow:none;}              /* known-off, not alarming */
+.dot.svc.error{background:#F76A9A; box-shadow:0 0 9px #F76A9A; animation:blink 1.4s infinite;}

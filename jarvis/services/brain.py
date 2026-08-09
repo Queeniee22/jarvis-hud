@@ -229,6 +229,11 @@ async def ask(hub, text: str, source: str = "text"):
 
         await proc.wait()
         stderr = (await stderr_task).decode("utf-8", "ignore").strip()
+        if not proc.returncode:
+            # Report success too, not only failures. Reporting errors alone
+            # leaves a healthy brain showing as "unknown" in the service
+            # panel forever, which is indistinguishable from never started.
+            await hub.broadcast({"type": "status", "service": "brain", "state": "online"})
         if proc.returncode:
             log.error("brain: claude exited %s: %s", proc.returncode, stderr[-2000:])
             if not reply:

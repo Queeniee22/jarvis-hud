@@ -117,7 +117,8 @@ async def _run_cycles(hub, monkeypatch, outcomes, interval=0.01):
         return outcome
 
     monkeypatch.setattr(vault, "list_files", fake_list_files)
-    monkeypatch.setattr(vault, "read_links", lambda path: [])
+    # run() reads links and mtime together now, in one request per note.
+    monkeypatch.setattr(vault, "read_note_meta", lambda path: {"links": [], "mtime": 0})
     monkeypatch.setattr(vault.config, "OBSIDIAN_API_KEY", "test-key")
 
     task = asyncio.create_task(vault.run(hub, interval=interval))
@@ -200,3 +201,76 @@ def test_is_known_path_rejects_when_the_vault_is_unreachable(monkeypatch):
         raise ConnectionError("vault down")
     monkeypatch.setattr(vault, "list_files", boom)
     assert vault.is_known_path("anything.md") is False
+
+
+def test_read_note_meta_returns_links_and_mtime(monkeypatch):
+    """One request must yield both, or the graph pass pays a second
+    round-trip per note just to answer 'what did he edit last'."""
+    from jarvis.services import vault
+
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {
+                "content": "see [[Debug Log]] and [[Projects]]",
+                "stat": {"mtime": 1786040005194, "ctime": 1, "size": 10},
+            }
+
+    def fake_get(url, headers=None, timeout=None, verify=None):
+        captured["url"] = url
+        captured["accept"] = (headers or {}).get("Accept")
+        return FakeResp()
+
+    monkeypatch.setattr(vault.requests, "get", fake_get)
+    meta = vault.read_note_meta("02 Programming/Debug Log.md")
+
+    assert meta["links"] == ["Debug Log", "Projects"]
+    assert meta["mtime"] == 1786040005194
+    assert captured["accept"] == "application/vnd.olrapi.note+json"
+    assert "%20" in captured["url"], "spaces in vault paths must be encoded"
+
+
+def test_read_note_meta_survives_a_note_with_no_stat(monkeypatch):
+    from jarvis.services import vault
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return {"content": "no links here"}
+
+    monkeypatch.setattr(vault.requests, "get", lambda *a, **k: FakeResp())
+    meta = vault.read_note_meta("A.md")
+    assert meta == {"links": [], "mtime": 0}
+
+
+async def test_vault_panel_reports_the_most_recently_edited_note(monkeypatch):
+    """It used to report files[-1] -- the last path alphabetically -- which
+    looked plausible and was almost always the wrong note."""
+    from jarvis.services import vault
+
+    files = ["00 Index/Aardvark.md", "99 Zebra.md", "05 Daily/Today.md"]
+    mtimes = {"00 Index/Aardvark.md": 100, "99 Zebra.md": 200, "05 Daily/Today.md": 999}
+
+    monkeypatch.setattr(vault, "list_files", lambda *a, **k: files)
+    monkeypatch.setattr(vault, "read_note_meta",
+                        lambda path: {"links": [], "mtime": mtimes[path]})
+    monkeypatch.setattr(vault.config, "OBSIDIAN_API_KEY", "test-key")
+
+    class Hub:
+        def __init__(self): self.msgs = []
+        async def broadcast(self, m): self.msgs.append(m)
+
+    hub = Hub()
+    task = asyncio.create_task(vault.run(hub, interval=3600))
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if any(m.get("type") == "vault" for m in hub.msgs):
+            break
+    task.cancel()
+
+    payload = [m for m in hub.msgs if m.get("type") == "vault"][0]
+    assert payload["lastNote"] == "Today", "must be newest by mtime, not last alphabetically"
+    assert payload["notes"] == 3
+    assert payload["lastEditedMs"] == 999

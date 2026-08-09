@@ -118,17 +118,27 @@ async def _prewarm_one(phrase: str):
         log.warning("voice: could not prewarm ack %r: %s", phrase, e)
 
 
-async def prewarm_acks():
+async def prewarm_acks(hub=None):
     """Synthesize the filler phrases once, at startup.
 
     Without this the first acknowledgement pays a ~0.6s TTS fetch, which is
     exactly the dead air it exists to cover.
     """
     if not available():
+        if hub is not None:
+            await hub.broadcast({
+                "type": "status", "service": "voice", "state": "offline",
+                "detail": "missing ELEVENLABS_API_KEY or VOICE_ID",
+            })
         return
     for phrase in ACK_PHRASES:
         await _prewarm_one(phrase)
     log.info("voice: prewarmed %d ack phrases", len(_ack_cache))
+    if hub is not None:
+        # Prewarming proves the key, the voice id and the network all work --
+        # a better health signal than merely having the settings present.
+        state = "online" if _ack_cache else "error"
+        await hub.broadcast({"type": "status", "service": "voice", "state": state})
 
 
 async def speak_ack(hub):

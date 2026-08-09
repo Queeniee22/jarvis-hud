@@ -80,6 +80,35 @@ def read_links(path: str) -> list[str]:
     return [m.group(1).strip() for m in WIKILINK_RE.finditer(text)]
 
 
+def _title(path: str) -> str:
+    """'02 Programming/Debug Log.md' -> 'Debug Log'."""
+    return path.rsplit("/", 1)[-1].removesuffix(".md")
+
+
+def read_note_meta(path: str) -> dict:
+    """Wikilink targets plus the note's last-modified time, in one request.
+
+    The API's note+json form returns content and `stat` together, so the
+    graph pass gets modification times for free rather than paying a second
+    round-trip per note just to answer "which note did he touch last".
+    """
+    base = _base_url()
+    url = f"{base}/vault/{_encode_path(path)}"
+    r = requests.get(
+        url,
+        headers=_headers(accept="application/vnd.olrapi.note+json"),
+        timeout=TIMEOUT,
+        verify=_verify(),
+    )
+    r.raise_for_status()
+    data = r.json()
+    text = data.get("content") or ""
+    return {
+        "links": [m.group(1).strip() for m in WIKILINK_RE.finditer(text)],
+        "mtime": (data.get("stat") or {}).get("mtime") or 0,
+    }
+
+
 def read_note(path: str) -> str:
     """Read a note's raw markdown, for display/editing in the HUD."""
     return _get_markdown(path)
@@ -180,20 +209,26 @@ async def run(hub, interval: float = 60.0):
             files = await asyncio.to_thread(list_files)
             _known_paths = set(files)
             links: dict[str, list[str]] = {}
+            mtimes: dict[str, int] = {}
             for f in files:
-                links[f] = await asyncio.to_thread(read_links, f)
+                meta = await asyncio.to_thread(read_note_meta, f)
+                links[f] = meta["links"]
+                mtimes[f] = meta["mtime"]
 
             graph = build_graph(files, links)
             await hub.broadcast(graph)
 
-            top_level = sorted({f.split("/", 1)[0] for f in files if "/" in f})
-            work_notes = [f for f in files if f.startswith("03 Work/")]
-            last_note = files[-1] if files else None
+            # Actually the most recently edited note. This used to be
+            # files[-1] -- the last path alphabetically -- which looked
+            # plausible and was almost always wrong.
+            newest = max(mtimes, key=mtimes.get) if mtimes else None
             await hub.broadcast({
                 "type": "vault",
-                "projects": top_level,
-                "threads": len(work_notes),
-                "lastNote": last_note,
+                "notes": len(files),
+                "links": len(graph["links"]),
+                "folders": len({f.split("/", 1)[0] for f in files if "/" in f}),
+                "lastNote": _title(newest) if newest else None,
+                "lastEditedMs": mtimes.get(newest) if newest else None,
             })
             if online is not True:
                 await hub.broadcast({"type": "status", "service": "vault", "state": "online"})

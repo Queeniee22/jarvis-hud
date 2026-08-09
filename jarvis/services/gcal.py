@@ -105,6 +105,10 @@ async def run(hub, interval: float = 300.0):
         })
         return
 
+    # Transitions only -- the hub replays the last status per service, so a
+    # repeat every cycle adds nothing and a stale offline would outlive it.
+    online: bool | None = None
+
     while True:
         try:
             creds = await asyncio.to_thread(_load_credentials)
@@ -112,7 +116,12 @@ async def run(hub, interval: float = 300.0):
                 raise RuntimeError("token.json is invalid or revoked -- re-run scripts/gcal_auth.py")
             raw = await asyncio.to_thread(_fetch_today_events, creds)
             await hub.broadcast(format_events(raw))
+            if online is not True:
+                await hub.broadcast({"type": "status", "service": "calendar", "state": "online"})
+                online = True
         except Exception as e:
-            await hub.broadcast({"type": "status", "service": "calendar", "state": "offline", "detail": str(e)})
+            if online is not False:
+                await hub.broadcast({"type": "status", "service": "calendar", "state": "offline", "detail": str(e)})
+                online = False
 
         await asyncio.sleep(interval)

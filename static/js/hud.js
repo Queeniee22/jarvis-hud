@@ -111,18 +111,43 @@
   function applyVault(m){
     const list = document.getElementById('vaultList');
     if (!list) return;
-    const projects = Array.isArray(m.projects) ? m.projects.join(', ') : (m.projects || '');
-    const threads = (typeof m.threads === 'number') ? m.threads : (m.threads || 0);
-    const lastNote = m.lastNote || '—';
-    const items = [
-      `Projects: ${projects || '—'}`,
-      `Open threads: ${threads}`,
-      `Last note: ${lastNote}`
-    ];
+    const items = [];
+    if (typeof m.notes === 'number') items.push(`Notes: ${m.notes}`);
+    if (typeof m.links === 'number') items.push(`Links: ${m.links}`);
+    if (m.lastNote) items.push(`Last edited: ${m.lastNote}${m.lastEditedMs ? ' · ' + ago(m.lastEditedMs) : ''}`);
+    if (!items.length) items.push('vault empty');
     list.innerHTML = items.map((text, i) =>
       `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${text}</li>`
     ).join('');
   }
+
+  /* "3m ago" beats a raw timestamp for the one question the panel answers:
+     is this vault stale, or did I just touch it? */
+  function ago(ms){
+    const secs = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + 'm ago';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + 'h ago';
+    return Math.floor(hours / 24) + 'd ago';
+  }
+
+  /* Service health panel. Every service reports online/offline/error; a row
+     that has never reported stays "—" rather than claiming to be fine. */
+  function applyServiceStatus(m){
+    const row = document.querySelector(`#serviceList li[data-service="${m.service}"]`);
+    if (!row) return;
+    const dot = row.querySelector('.dot');
+    const label = row.querySelector('.svcstate');
+    dot.classList.remove('online', 'offline', 'error');
+    const state = m.state === 'ready' ? 'online' : m.state;
+    if (state) dot.classList.add(state);
+    if (label) label.textContent = state || '—';
+    // The reason matters more than the word; surface it on hover.
+    row.title = m.detail ? `${m.service}: ${state} — ${m.detail}` : `${m.service}: ${state}`;
+  }
+
   function applyCalendar(m){
     const list = document.getElementById('todayList');
     if (!list) return;
@@ -213,6 +238,7 @@
   }
   function applyStatus(m){
     console.warn("service", m.service, m.state, m.detail||"");
+    applyServiceStatus(m);
     if (m.state !== "offline") return;
     if (m.service === "calendar") {
       offlineList('todayList', 'calendar offline');
@@ -359,7 +385,7 @@
 
   // Debug handle: lets the UI be exercised without a live conversation.
   window.__hud = {
-    applyAsk, clearAsk, applyHeard, applyThinking, send,
+    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, ago, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
     noteState: () => noteState,
   };

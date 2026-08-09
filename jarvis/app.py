@@ -31,7 +31,7 @@ async def _startup():
     _spawn(gcal.run(hub))
     # Synthesize the "thinking" fillers up front so the first one plays
     # instantly instead of paying a TTS fetch mid-pause.
-    _spawn(voice.prewarm_acks())
+    _spawn(voice.prewarm_acks(hub))
     # Session-start: read the vault, then greet (vault CLAUDE.md protocol).
     _spawn(boot.run(hub))
 

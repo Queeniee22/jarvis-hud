@@ -208,6 +208,10 @@ async def run(hub):
         await hub.broadcast({"type": "status", "service": "ears", "state": "offline", "detail": f"device: {e}"})
         return
 
+    # Say so when it works, not only when it breaks: a panel that shows a
+    # service only on failure can't distinguish "healthy" from "never started".
+    await hub.broadcast({"type": "status", "service": "ears", "state": "online"})
+
     try:
         await _capture_loop(hub, q, model, loop)
     finally:
