@@ -135,6 +135,15 @@
 
   /* Service health panel. Every service reports online/offline/error; a row
      that has never reported stays "—" rather than claiming to be fine. */
+  const SERVICE_WHAT = {
+    ears: 'Speech to text. Runs faster-whisper locally while you hold the talk key.',
+    voice: 'Text to speech via ElevenLabs. Your replies are spoken with this.',
+    brain: 'The Claude Code CLI, running inside your vault so it can read and write notes.',
+    vault: 'Obsidian Local REST API — the vault panel, the graph, and note editing.',
+    calendar: 'Google Calendar, read-only. Fills the TODAY panel.',
+  };
+  const serviceSeen = {};   // service -> when its state last changed
+
   function applyServiceStatus(m){
     const row = document.querySelector(`#serviceList li[data-service="${m.service}"]`);
     if (!row) return;
@@ -144,9 +153,38 @@
     const state = m.state === 'ready' ? 'online' : m.state;
     if (state) dot.classList.add(state);
     if (label) label.textContent = state || '—';
-    // The reason matters more than the word; surface it on hover.
-    row.title = m.detail ? `${m.service}: ${state} — ${m.detail}` : `${m.service}: ${state}`;
+    serviceSeen[m.service] = { state, detail: m.detail || '', at: Date.now() };
   }
+
+  /* A custom tooltip rather than title=. The native one waited a second,
+     drew in OS chrome, and only ever repeated the state already on the row. */
+  const svcTip = document.getElementById('svcTip');
+  function showServiceTip(row){
+    if (!svcTip) return;
+    const name = row.dataset.service;
+    const seen = serviceSeen[name];
+    const parts = [`<span class="tipname">${name.toUpperCase()}</span>`];
+    if (SERVICE_WHAT[name]) parts.push(`<span class="tipwhat">${SERVICE_WHAT[name]}</span>`);
+    if (seen && seen.detail) parts.push(`<span class="tipdetail">${seen.detail}</span>`);
+    parts.push(seen
+      ? `<span class="tipwhen">${seen.state} · reported ${ago(seen.at)}</span>`
+      : `<span class="tipwhen">has not reported yet</span>`);
+    svcTip.innerHTML = parts.join('');
+    svcTip.classList.remove('hide');
+
+    // Anchor to the left of the row: the panel is on the right edge, so a
+    // tooltip placed rightward would run off screen.
+    const r = row.getBoundingClientRect();
+    const t = svcTip.getBoundingClientRect();
+    svcTip.style.left = Math.max(8, r.left - t.width - 10) + 'px';
+    svcTip.style.top = Math.max(8, Math.min(window.innerHeight - t.height - 8, r.top - 4)) + 'px';
+  }
+  function hideServiceTip(){ if (svcTip) svcTip.classList.add('hide'); }
+
+  document.querySelectorAll('#serviceList li').forEach(row => {
+    row.addEventListener('mouseenter', () => showServiceTip(row));
+    row.addEventListener('mouseleave', hideServiceTip);
+  });
 
   function applyCalendar(m){
     const list = document.getElementById('todayList');
@@ -385,7 +423,7 @@
 
   // Debug handle: lets the UI be exercised without a live conversation.
   window.__hud = {
-    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, ago, send,
+    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, ago, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
     noteState: () => noteState,
   };

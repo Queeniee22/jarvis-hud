@@ -224,3 +224,30 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
 .dot.svc.online{background:#B8E6C4; box-shadow:0 0 7px #B8E6C4;}
 .dot.svc.offline{background:#D8C4D0; box-shadow:none;}              /* known-off, not alarming */
 .dot.svc.error{background:#F76A9A; box-shadow:0 0 9px #F76A9A; animation:blink 1.4s infinite;}
+
+/* Service tooltip. The native title= attribute was useless here: it repeated
+   the state already printed on the row, waited a second to appear, and drew
+   in OS chrome that clashes with everything around it. */
+.svctip{
+  position:fixed; z-index:60; max-width:280px; pointer-events:none;
+  background:#2C1A30f2; border:2px solid var(--blush); border-radius:10px;
+  padding:8px 11px; box-shadow:0 0 18px #F76A9A55;
+}
+.svctip.hide{display:none;}
+.svctip .tipname{
+  font-family:"Press Start 2P"; font-size:8px; color:#F7B7CE;
+  letter-spacing:1px; display:block; margin-bottom:6px;
+}
+.svctip .tipwhat{
+  font-family:"Pixelify Sans"; font-size:13px; color:#E9C7DE;
+  display:block; line-height:1.5;
+}
+.svctip .tipdetail{
+  font-family:"Pixelify Sans"; font-size:13px; color:#F7E5A0;
+  display:block; margin-top:6px; line-height:1.4;
+}
+.svctip .tipwhen{
+  font-family:"Pixelify Sans"; font-size:12px; color:#C9B6E4;
+  display:block; margin-top:6px; opacity:.85;
+}
+#serviceList li{cursor:default;}
