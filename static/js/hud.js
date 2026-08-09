@@ -19,6 +19,11 @@
     else if (m.type === "vault") applyVault(m);
     else if (m.type === "graph") {
       state.graph = m;
+      // Make the nodes searchable immediately, without waiting for the
+      // GRAPH tab to be opened and drawn at least once.
+      if (window.setGraphNodes) window.setGraphNodes(m.nodes);
+      // A search typed before the data landed should now find its matches.
+      runGraphSearch();
       // Real data arrived: the vault recovered, so drop any offline notice.
       if (window.setGraphNotice) window.setGraphNotice(null);
     }
@@ -138,6 +143,39 @@
     const hours = Math.floor(mins / 60);
     if (hours < 24) return hours + 'h ago';
     return Math.floor(hours / 24) + 'd ago';
+  }
+
+  /* Graph search. The box shipped as a plain <div> from the mockup -- it
+     looked like a search field and could not be typed in. */
+  const graphSearch = document.getElementById('graphSearch');
+  const graphSearchCount = document.getElementById('graphSearchCount');
+  function runGraphSearch(){
+    if (!graphSearch || !window.setGraphFilter) return;
+    const q = graphSearch.value;
+    const n = window.setGraphFilter(q);
+    if (!graphSearchCount) return;
+    if (!q.trim()) {
+      graphSearchCount.classList.add('hide');
+    } else {
+      graphSearchCount.classList.remove('hide');
+      graphSearchCount.textContent = n === 0 ? 'no matches' : `${n} match${n === 1 ? '' : 'es'}`;
+      graphSearchCount.classList.toggle('none', n === 0);
+    }
+  }
+  if (graphSearch) {
+    graphSearch.addEventListener('input', runGraphSearch);
+    graphSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        graphSearch.value = '';
+        runGraphSearch();
+        graphSearch.blur();
+      } else if (e.key === 'Enter') {
+        // One match is unambiguous, so open it rather than making him find
+        // the highlighted dot and click it.
+        const hits = window.graphMatches ? window.graphMatches() : [];
+        if (hits.length) openNote(hits[0]);
+      }
+    });
   }
 
   /* Service health panel. Every service reports online/offline/error; a row

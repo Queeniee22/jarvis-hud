@@ -38,6 +38,11 @@
   let layoutEnergy = 0;
   let energyHistory = [];
 
+  // Search. Matching nodes stay lit and labelled; the rest dim rather than
+  // disappear, so the shape of the vault stays readable while filtering.
+  let filterText = '';
+  let matchIds = new Set();
+
   function initGraph(){
     gc = document.getElementById('graph');
     statsEl = document.getElementById('gstats');
@@ -82,6 +87,34 @@
   }
 
   function setGraphNodeClick(fn){ clickHandler = fn; }
+
+  /* Search reads from lastNodes, which renderGraph only fills while the tab
+     is actually drawing. Feeding the data in as it arrives means a search
+     works before the GRAPH tab has ever been opened -- otherwise it silently
+     reports "no matches" for a vault that is fully loaded. */
+  function setGraphNodes(nodes){
+    if (Array.isArray(nodes) && nodes.length) lastNodes = nodes;
+  }
+
+  /* '#tag' matches tags the way Obsidian does; anything else matches the
+     note title. Returns how many nodes matched so the UI can say so. */
+  function setGraphFilter(text){
+    filterText = (text || '').trim().toLowerCase();
+    matchIds = new Set();
+    if (!filterText) return 0;
+    const isTag = filterText.startsWith('#');
+    const needle = isTag ? filterText.slice(1) : filterText;
+    if (!needle) return 0;
+    for (const n of lastNodes) {
+      const hit = isTag
+        ? (n.tags || []).some(t => String(t).toLowerCase().includes(needle))
+        : String(n.label || '').toLowerCase().includes(needle);
+      if (hit) matchIds.add(n.id);
+    }
+    return matchIds.size;
+  }
+
+  function graphMatches(){ return [...matchIds]; }
   function setGraphOpenNode(id){ openNodeId = id || null; }
 
   function setGraphNotice(text){ notice = text || null; }
@@ -261,7 +294,8 @@
       for(const l of links){
         const A = posMap.get(l.s), B = posMap.get(l.t);
         if(!A || !B) continue;
-        gx.strokeStyle='rgba(201,182,228,0.18)';
+        gx.strokeStyle = (!filterText || (matchIds.has(l.s) && matchIds.has(l.t)))
+          ? 'rgba(201,182,228,0.18)' : 'rgba(201,182,228,0.04)';
         gx.beginPath();gx.moveTo(A.x,A.y);gx.lineTo(B.x,B.y);gx.stroke();
       }
       for(const n of nodes){
@@ -271,15 +305,23 @@
         // Hovered/open nodes draw bigger and brighter -- the only signal
         // (besides the cursor) that a node is a clickable target at all.
         const emphasized = n.id === hoveredId || n.id === openNodeId;
-        const radius = emphasized ? 6 : 3;
-        gx.beginPath();gx.fillStyle='rgba('+c+',0.95)';
-        gx.shadowColor='rgba('+c+',0.9)';gx.shadowBlur = emphasized ? 14 : 8;
+        const matched = !filterText || matchIds.has(n.id);
+        const radius = emphasized ? 6 : (matched && filterText ? 5 : 3);
+        const alpha = matched ? 0.95 : 0.12;
+        gx.beginPath();gx.fillStyle='rgba('+c+','+alpha+')';
+        gx.shadowColor='rgba('+c+','+(matched?0.9:0)+')';
+        gx.shadowBlur = emphasized ? 14 : (matched ? 8 : 0);
         gx.arc(p.x,p.y,radius,0,7);gx.fill();
       }
       gx.shadowBlur=0;
 
       // Labels drawn last, above every node/link, so hovered and
       // currently-open notes are legible regardless of what's underneath.
+      if (filterText) {
+        // Naming the matches is the point of searching; a highlight alone
+        // still leaves you hunting for which dot is which.
+        for (const id of matchIds) drawNodeLabel(nodes, id, 'rgba(247,183,206,0.95)');
+      }
       if (openNodeId && openNodeId !== hoveredId) drawNodeLabel(nodes, openNodeId, 'rgba(184,230,196,0.95)');
       if (hoveredId) drawNodeLabel(nodes, hoveredId, 'rgba(247,183,206,0.95)');
       paintStats(nodes.length, links.length);
@@ -309,5 +351,8 @@
   window.renderGraph = renderGraph;
   window.setGraphNotice = setGraphNotice;
   window.setGraphNodeClick = setGraphNodeClick;
+  window.setGraphFilter = setGraphFilter;
+  window.setGraphNodes = setGraphNodes;
+  window.graphMatches = graphMatches;
   window.setGraphOpenNode = setGraphOpenNode;
 })();

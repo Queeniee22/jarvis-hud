@@ -251,3 +251,19 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
   display:block; margin-top:6px; opacity:.85;
 }
 #serviceList li{cursor:default;}
+
+/* Graph search. Was a <div> that looked like an input but could not be typed
+   in; now a real field, styled to match rather than inheriting browser chrome. */
+input.gsearch{
+  font-family:"Pixelify Sans"; font-size:14px; color:#F7D9E8;
+  background:#2C1A30cc; border:2px solid #5A3A5E; border-radius:10px;
+  padding:7px 14px; outline:none; transition:border-color .15s ease, box-shadow .15s ease;
+}
+input.gsearch::placeholder{color:#A98BB0;}
+input.gsearch:focus{border-color:var(--blush); box-shadow:0 0 14px #F76A9A55;}
+.gsearchcount{
+  position:absolute; top:52px; left:50%; transform:translateX(-50%);
+  z-index:3; font-family:"Pixelify Sans"; font-size:12px; color:#B8E6C4;
+}
+.gsearchcount.none{color:#F7B7CE;}
+.gsearchcount.hide{display:none;}

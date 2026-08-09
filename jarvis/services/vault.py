@@ -110,6 +110,8 @@ def read_note_meta(path: str) -> dict:
         # count alone is too small a number to be worth the big readout, and
         # size in bytes says more about images than about what he has written.
         "words": len(text.split()),
+        # Carried so the graph search can match "#tag" the way Obsidian does.
+        "tags": list(data.get("tags") or []),
     }
 
 
@@ -157,7 +159,8 @@ def is_known_path(path: str) -> bool:
     return path in _known_paths
 
 
-def build_graph(files: list[str], links: dict[str, list[str]]) -> dict:
+def build_graph(files: list[str], links: dict[str, list[str]],
+                tags: dict[str, list[str]] | None = None) -> dict:
     """Build a {type, nodes, links} graph payload from a file list and a
     path -> [wikilink target] map. Wikilink targets are resolved to a file
     by basename (case-insensitive), falling back to exact path match."""
@@ -173,7 +176,10 @@ def build_graph(files: list[str], links: dict[str, list[str]]) -> dict:
         name = f.rsplit("/", 1)[-1]
         label = name[:-3] if name.endswith(".md") else name
         group = f.split("/", 1)[0] if "/" in f else "root"
-        nodes.append({"id": f, "label": label, "group": group})
+        nodes.append({
+            "id": f, "label": label, "group": group,
+            "tags": (tags or {}).get(f, []),
+        })
 
     result_links = []
     seen = set()
@@ -214,14 +220,16 @@ async def run(hub, interval: float = 60.0):
             _known_paths = set(files)
             links: dict[str, list[str]] = {}
             mtimes: dict[str, int] = {}
+            note_tags: dict[str, list[str]] = {}
             words = 0
             for f in files:
                 meta = await asyncio.to_thread(read_note_meta, f)
                 links[f] = meta["links"]
                 mtimes[f] = meta["mtime"]
                 words += meta.get("words", 0)
+                note_tags[f] = meta.get("tags", [])
 
-            graph = build_graph(files, links)
+            graph = build_graph(files, links, note_tags)
             await hub.broadcast(graph)
 
             # Actually the most recently edited note. This used to be
