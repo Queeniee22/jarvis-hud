@@ -32,6 +32,8 @@
     else if (m.type === "ask") applyAsk(m);
     else if (m.type === "heard") applyHeard(m);
     else if (m.type === "status") applyStatus(m);
+    else if (m.type === "skills") applySkills(m);
+    else if (m.type === "skill") applySkillState(m);
     else if (m.type === "note") applyNote(m);
     else if (m.type === "note_saved") applyNoteSaved(m);
     else if (m.type === "note_error") applyNoteError(m);
@@ -247,6 +249,61 @@
     row.addEventListener('mouseenter', () => showServiceTip(row));
     row.addEventListener('mouseleave', hideServiceTip);
   });
+
+  /* Skills panel. Repeatable workflows, run by click, voice or schedule.
+     The button list is rebuilt whenever the server's `skills` list changes;
+     `skill` messages then flip one row between running/done/error/busy
+     without touching the rest of the list. */
+  function applySkills(m){
+    const list = document.getElementById('skillList');
+    if (!list) return;
+    const items = Array.isArray(m.skills) ? m.skills : [];
+    if (!items.length) {
+      list.innerHTML = '<li><span class="dot"></span>no skills yet</li>';
+      return;
+    }
+    list.innerHTML = items.map((s) => `
+      <li data-skill="${s.id}">
+        <span class="dot"></span>
+        <button class="skillBtn" type="button">
+          <span class="skillIcon">${s.icon || '✦'}</span>
+          <span class="skillName">${s.name}</span>
+          ${s.schedule ? `<span class="skillSched">${s.schedule}</span>` : ''}
+        </button>
+        <span class="skillState"></span>
+      </li>
+    `).join('');
+    list.querySelectorAll('.skillBtn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        const id = btn.closest('li').dataset.skill;
+        send({type:'run_skill', id});
+      });
+    });
+  }
+  function applySkillState(m){
+    const row = document.querySelector(`#skillList li[data-skill="${m.id}"]`);
+    if (!row) return;
+    const btn = row.querySelector('.skillBtn');
+    const stateEl = row.querySelector('.skillState');
+    row.classList.remove('running', 'error', 'busy');
+    if (m.state === 'running') {
+      row.classList.add('running');
+      if (btn) btn.disabled = true;
+      if (stateEl) stateEl.textContent = 'running…';
+    } else if (m.state === 'error') {
+      row.classList.add('error');
+      if (btn) btn.disabled = false;
+      if (stateEl) stateEl.textContent = m.detail ? `error: ${m.detail}` : 'error';
+    } else if (m.state === 'busy') {
+      row.classList.add('busy');
+      if (btn) btn.disabled = false;
+      if (stateEl) stateEl.textContent = 'busy — another skill is running';
+    } else if (m.state === 'done') {
+      if (btn) btn.disabled = false;
+      if (stateEl) stateEl.textContent = '';
+    }
+  }
 
   function applyCalendar(m){
     const list = document.getElementById('todayList');
@@ -487,6 +544,7 @@
   window.__hud = {
     applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, clearGraphSearch, ago, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
+    applySkills, applySkillState,
     noteState: () => noteState,
   };
 

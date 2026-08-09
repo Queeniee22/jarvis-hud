@@ -43,7 +43,12 @@ SYSTEM_PROMPT = (
     "BEFORE running any shell command -- including tests and git -- say out "
     "loud what you intend to run and wait for Mackenzie to agree. Never run "
     "one unasked. If a command is refused, tell him what it was rather than "
-    "trying a different way around it."
+    "trying a different way around it. "
+    "Repeatable workflows live as notes in '06 Skills/' -- if Mackenzie asks "
+    "you to run one by name, read that note and follow its '## Prompt' "
+    "section. When you finish running a skill, append a short entry to that "
+    "same note's '## Run log' section recording what you did and what to do "
+    "differently next time."
 )
 
 # Shell access is an explicit allowlist, not a blanket grant. Headless mode

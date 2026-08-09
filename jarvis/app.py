@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from jarvis import config
 from jarvis.hub import ConnectionHub
-from jarvis.services import brain, vitals, ears, vault, voice, boot, gcal
+from jarvis.services import brain, vitals, ears, vault, voice, boot, gcal, skills
 
 hub = ConnectionHub()
 
@@ -28,6 +28,7 @@ async def _startup():
     _spawn(ears.run(hub))
     _spawn(vault.run(hub))
     _spawn(gcal.run(hub))
+    _spawn(skills.run(hub))
     # Synthesize the "thinking" fillers up front so the first one plays
     # instantly instead of paying a TTS fetch mid-pause.
     _spawn(voice.prewarm_acks(hub))
@@ -156,6 +157,13 @@ async def ws(sock: WebSocket):
                 _spawn(_open_note((msg.get("path") or "").strip()))
             elif msg.get("type") == "note_save":
                 _spawn(_save_note((msg.get("path") or "").strip(), msg.get("content")))
+            elif msg.get("type") == "run_skill":
+                # Spawned, not awaited: a skill run is tens of seconds of
+                # brain.ask, and this loop must stay responsive for
+                # push-to-talk the whole time it runs.
+                skill_id = (msg.get("id") or "").strip()
+                if skill_id:
+                    _spawn(skills.run_skill(hub, skill_id, msg.get("extra") or ""))
     except WebSocketDisconnect:
         pass
     finally:

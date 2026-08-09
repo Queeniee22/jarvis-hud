@@ -251,6 +251,28 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
 }
 #serviceList li{cursor:default;}
 
+/* Skills panel: repeatable workflows, run by click, voice or schedule.
+   Rows reuse the same dot+list language as VAULT/SERVICES rather than
+   introducing a new pattern. */
+#skillList li{justify-content:flex-start; align-items:center;}
+.skillBtn{
+  flex:1; min-width:0; display:flex; align-items:center; gap:8px;
+  text-align:left; font-family:"Pixelify Sans"; font-size:15px; color:var(--ink);
+  background:transparent; border:none; padding:2px 0; cursor:pointer;
+}
+.skillBtn:hover:not(:disabled){color:var(--deep);}
+.skillBtn:disabled{cursor:default; opacity:.7;}
+.skillIcon{font-family:"Press Start 2P"; font-size:9px; color:var(--deep); flex:none;}
+.skillName{flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.skillSched{font-size:11px; color:var(--lilac); opacity:.85; white-space:nowrap;}
+.skillState{font-size:12px; color:var(--deep); opacity:.75; margin-left:auto; white-space:nowrap; flex:none;}
+#skillList li.running .dot{background:var(--butter); box-shadow:0 0 7px var(--butter); animation:blink 1s infinite;}
+#skillList li.running .skillState{color:#B87AA0;}
+#skillList li.error .dot{background:#F76A9A; box-shadow:0 0 9px #F76A9A;}
+#skillList li.error .skillState{color:#F76A9A;}
+#skillList li.busy .dot{background:var(--lilac); box-shadow:0 0 7px var(--lilac);}
+#skillList li.busy .skillState{color:var(--lilac);}
+
 /* Graph search. Was a <div> that looked like an input but could not be typed
    in; now a real field, styled to match rather than inheriting browser chrome. */
 input.gsearch{
