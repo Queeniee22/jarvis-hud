@@ -23,6 +23,7 @@
       if (window.setGraphNotice) window.setGraphNotice(null);
     }
     else if (m.type === "calendar") applyCalendar(m);
+    else if (m.type === "thinking") applyThinking(m);
     else if (m.type === "ask") applyAsk(m);
     else if (m.type === "heard") applyHeard(m);
     else if (m.type === "status") applyStatus(m);
@@ -134,6 +135,29 @@
       `<li><span class="dot ${dotClasses[i % dotClasses.length]}"></span>${ev.time} &nbsp;${ev.title}</li>`
     ).join('');
   }
+  /* "thinking" indicator. Counts elapsed seconds rather than sitting static,
+     so a turn that is merely slow looks different from one that is wedged. */
+  let thinkTimer = null;
+  let thinkStart = 0;
+  function applyThinking(m){
+    const box = document.getElementById('thinking');
+    const time = document.getElementById('thinkTime');
+    if (!box) return;
+    if (m.active) {
+      thinkStart = Date.now();
+      if (time) time.textContent = '0s';
+      box.classList.remove('hide');
+      clearInterval(thinkTimer);
+      thinkTimer = setInterval(() => {
+        if (time) time.textContent = Math.floor((Date.now() - thinkStart) / 1000) + 's';
+      }, 500);
+    } else {
+      clearInterval(thinkTimer);
+      thinkTimer = null;
+      box.classList.add('hide');
+    }
+  }
+
   /* clickable option cards -- answering by click instead of speaking */
   function clearAsk(){
     const box = document.getElementById('askBox');
@@ -335,7 +359,7 @@
 
   // Debug handle: lets the UI be exercised without a live conversation.
   window.__hud = {
-    applyAsk, clearAsk, applyHeard, send,
+    applyAsk, clearAsk, applyHeard, applyThinking, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
     noteState: () => noteState,
   };

@@ -136,3 +136,50 @@ def test_spawn_keeps_a_strong_reference():
     src = inspect.getsource(app_mod._spawn)
     assert "_service_tasks.add" in src
     assert "add_done_callback" in src, "must not leak entries after completion"
+
+
+async def test_thinking_indicator_is_raised_and_always_cleared(monkeypatch):
+    """An indicator left spinning after a turn is worse than none -- it would
+    claim Jarvis is still working forever."""
+    from jarvis.services import brain
+
+    class FakeProc:
+        returncode = 0
+        def __init__(self):
+            self.stdout = self
+            self.stderr = self
+        async def read(self):
+            return b""
+        def __aiter__(self):
+            return self
+        async def __anext__(self):
+            raise StopAsyncIteration
+        def kill(self):
+            pass
+        async def wait(self):
+            return 0
+
+    proc = FakeProc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", lambda *a, **k: _wrap(proc))
+    monkeypatch.setattr(brain, "iter_lines", lambda stdout: proc)
+
+    hub = StubHub()
+    await brain.ask(hub, "hello")
+
+    flags = [m["active"] for m in hub.msgs if m.get("type") == "thinking"]
+    assert flags == [True, False], f"expected raise then clear, got {flags}"
+
+
+async def test_thinking_is_cleared_even_when_the_turn_fails(monkeypatch):
+    from jarvis.services import brain
+
+    async def boom(*a, **k):
+        raise RuntimeError("claude is missing")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", boom)
+
+    hub = StubHub()
+    await brain.ask(hub, "hello")
+
+    flags = [m["active"] for m in hub.msgs if m.get("type") == "thinking"]
+    assert flags and flags[-1] is False, "a failed turn must still clear the indicator"

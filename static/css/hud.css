@@ -186,3 +186,33 @@ body.talking .micdot{background:#F76A9A;box-shadow:0 0 12px #F76A9A;animation:bl
   font-family:"Press Start 2P"; font-size:8px; color:#fff;
   background:#F76A9A; border-radius:5px; padding:4px 5px; flex:none;
 }
+
+/* "Thinking" indicator, pinned under the CORE cap. The spoken filler only
+   helps if you are listening; this answers "is it still working?" at a
+   glance during the ~5s the Claude CLI takes per turn. */
+.thinking{
+  position:absolute; top:76px; left:50%; transform:translateX(-50%);
+  z-index:4; display:flex; align-items:center; gap:8px;
+  background:#2C1A30dd; border:2px solid var(--blush); border-radius:12px;
+  padding:6px 12px; box-shadow:0 0 16px #F76A9A66;
+}
+.thinking.hide{display:none;}
+.thinklabel{
+  font-family:"Press Start 2P"; font-size:8px; letter-spacing:1px;
+  color:#F7B7CE; text-shadow:0 0 6px #F76A9A88;
+}
+/* Elapsed seconds: a static label can't distinguish "working" from "wedged". */
+.thinktime{
+  font-family:"Pixelify Sans"; font-size:13px; color:#C9B6E4; min-width:26px;
+}
+.thinkdots{display:flex; gap:4px;}
+.thinkdots i{
+  width:6px; height:6px; border-radius:50%; background:var(--blush);
+  box-shadow:0 0 6px var(--blush); animation:thinkpulse 1.2s infinite;
+}
+.thinkdots i:nth-child(2){animation-delay:.2s;}
+.thinkdots i:nth-child(3){animation-delay:.4s;}
+@keyframes thinkpulse{
+  0%,100%{opacity:.25; transform:scale(.8);}
+  50%{opacity:1; transform:scale(1.15);}
+}

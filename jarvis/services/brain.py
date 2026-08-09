@@ -177,6 +177,11 @@ async def ask(hub, text: str, source: str = "text"):
         if not voice_only:
             await hub.broadcast(message)
 
+    # Visible for every turn, spoken or typed. The audio filler only helps if
+    # you happen to be listening; this is the at-a-glance answer to "did it
+    # hear me, or is it ignoring me?" during the ~5s the CLI takes.
+    await hub.broadcast({"type": "thinking", "active": True})
+
     if voice_only:
         # Say something immediately. The CLI turn below takes ~5s of mostly
         # fixed startup, so without a filler you'd get several seconds of
@@ -272,6 +277,13 @@ async def ask(hub, text: str, source: str = "text"):
                 pass  # already gone
         if stderr_task is not None and not stderr_task.done():
             stderr_task.cancel()
+
+        # Cleared on every exit path including cancellation -- an indicator
+        # left spinning after a failed turn is worse than none at all.
+        try:
+            await hub.broadcast({"type": "thinking", "active": False})
+        except Exception:
+            log.debug("brain: could not clear the thinking indicator")
 
         # Guarded rather than an early `return`: returning from a finally
         # block swallows the exception on its way out, which turned a

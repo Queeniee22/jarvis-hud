@@ -56,9 +56,34 @@ export function loadModule(file, html, opts = {}) {
     };
   }
 
-  const code = fs.readFileSync(path.join(STATIC, 'js', file), 'utf8');
-  window.eval(code);
+  // hud.js opens a websocket at load time; jsdom has none, so give it an
+  // inert stub that records what the page tried to send.
+  const sent = [];
+  window.WebSocket = class {
+    constructor() { this.readyState = 1; setTimeout(() => this.onopen && this.onopen(), 0); }
+    send(data) { sent.push(data); }
+    close() {}
+  };
+  window.__sent = sent;
+
+  // index.html loads core/graph/wave before hud.js, and hud.js calls into
+  // them at startup -- so a test that loads hud.js alone would fail on
+  // window.initCore. Accepts one filename or an ordered list.
+  for (const name of [].concat(file)) {
+    window.eval(fs.readFileSync(path.join(STATIC, 'js', name), 'utf8'));
+  }
   return { window, document: window.document, ctx, dom };
+}
+
+/** The real page body, so tests exercise the markup that actually ships.
+ *  Hand-maintained fixtures drift; this cannot. */
+export function realHudMarkup() {
+  const html = fs.readFileSync(path.join(STATIC, 'index.html'), 'utf8');
+  const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const inner = body ? body[1] : html;
+  // Drop the <script> tags: the loader evaluates those files itself, in
+  // order, and jsdom must not try to fetch them over HTTP.
+  return inner.replace(/<script[\s\S]*?<\/script>/gi, '');
 }
 
 /** The markup graph.js expects: a stats readout and a sized canvas. */
