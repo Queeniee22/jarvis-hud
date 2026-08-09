@@ -245,6 +245,21 @@
   }
   function hideServiceTip(){ if (svcTip) svcTip.classList.add('hide'); }
 
+  function showSkillTip(row){
+    if (!svcTip) return;
+    const info = skillInfo[row.dataset.skill];
+    if (!info) return;
+    const parts = [`<span class="tipname">${info.name.toUpperCase()}</span>`];
+    parts.push(`<span class="tipwhat">${info.description || 'No description yet -- add one to this skill note.'}</span>`);
+    parts.push(`<span class="tipwhen">${info.schedule ? 'runs itself: ' + info.schedule : 'runs only when you ask'}</span>`);
+    svcTip.innerHTML = parts.join('');
+    svcTip.classList.remove('hide');
+    const r = row.getBoundingClientRect();
+    const t = svcTip.getBoundingClientRect();
+    svcTip.style.left = Math.max(8, r.left - t.width - 10) + 'px';
+    svcTip.style.top = Math.max(8, Math.min(window.innerHeight - t.height - 8, r.top - 4)) + 'px';
+  }
+
   document.querySelectorAll('#serviceList li').forEach(row => {
     row.addEventListener('mouseenter', () => showServiceTip(row));
     row.addEventListener('mouseleave', hideServiceTip);
@@ -254,10 +269,12 @@
      The button list is rebuilt whenever the server's `skills` list changes;
      `skill` messages then flip one row between running/done/error/busy
      without touching the rest of the list. */
+  const skillInfo = {};   // id -> {name, description, schedule}
   function applySkills(m){
     const list = document.getElementById('skillList');
     if (!list) return;
     const items = Array.isArray(m.skills) ? m.skills : [];
+    items.forEach(s => { skillInfo[s.id] = s; });
     if (!items.length) {
       list.innerHTML = '<li><span class="dot"></span>no skills yet</li>';
       return;
@@ -273,6 +290,13 @@
         <span class="skillState"></span>
       </li>
     `).join('');
+    // Same tooltip as the service rows: what this button will do, in one
+    // sentence, before you press it. The full write-up lives in the vault at
+    // 06 Skills/README.md.
+    list.querySelectorAll('li[data-skill]').forEach((row) => {
+      row.addEventListener('mouseenter', () => showSkillTip(row));
+      row.addEventListener('mouseleave', hideServiceTip);
+    });
     list.querySelectorAll('.skillBtn').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
@@ -542,7 +566,7 @@
 
   // Debug handle: lets the UI be exercised without a live conversation.
   window.__hud = {
-    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, clearGraphSearch, ago, send,
+    applyAsk, clearAsk, applyHeard, applyThinking, applyVault, applyServiceStatus, showServiceTip, hideServiceTip, showSkillTip, clearGraphSearch, ago, send,
     applyNote, applyNoteSaved, applyNoteError, openNote, closeNote, saveNote,
     applySkills, applySkillState,
     noteState: () => noteState,

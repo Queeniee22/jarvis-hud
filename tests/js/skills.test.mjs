@@ -98,3 +98,52 @@ describe('skills panel', () => {
     assert.ok(sent.some((m) => m.type === 'run_skill' && m.id === '06 Skills/Vault Cleanup.md'));
   }));
 });
+
+describe('skill tooltips', () => {
+  test('hovering says what the skill does, in plain language', () => withHud(({ window, document }) => {
+    window.__hud.applySkills({ type: 'skills', skills: [
+      { id: '06 Skills/Morning Brief.md', name: 'Morning Brief', icon: '*',
+        schedule: 'daily 07:00',
+        description: 'Tells you the one thing that matters today.' },
+    ]});
+    const row = document.querySelector('#skillList li[data-skill]');
+    row.dispatchEvent(new window.MouseEvent('mouseenter'));
+
+    const tip = document.getElementById('svcTip');
+    assert.ok(!tip.classList.contains('hide'), 'tooltip should show on hover');
+    assert.match(tip.textContent, /MORNING BRIEF/);
+    assert.match(tip.textContent, /one thing that matters today/,
+      'the description is the point -- it must be shown');
+    assert.match(tip.textContent, /runs itself: daily 07:00/);
+  }));
+
+  test('a manual skill says so rather than implying a schedule', () => withHud(({ window, document }) => {
+    window.__hud.applySkills({ type: 'skills', skills: [
+      { id: 'a.md', name: 'Vault Cleanup', icon: '~', schedule: null,
+        description: 'Fixes frontmatter and broken links. Never deletes anything.' },
+    ]});
+    document.querySelector('#skillList li[data-skill]')
+      .dispatchEvent(new window.MouseEvent('mouseenter'));
+    assert.match(document.getElementById('svcTip').textContent, /runs only when you ask/);
+  }));
+
+  test('a skill with no description says so instead of rendering blank', () => withHud(({ window, document }) => {
+    window.__hud.applySkills({ type: 'skills', skills: [
+      { id: 'b.md', name: 'Nameless', icon: null, schedule: null },
+    ]});
+    document.querySelector('#skillList li[data-skill]')
+      .dispatchEvent(new window.MouseEvent('mouseenter'));
+    assert.match(document.getElementById('svcTip').textContent, /add one to this skill note/);
+  }));
+
+  test('hiding works the same as the service rows', () => withHud(({ window, document }) => {
+    window.__hud.applySkills({ type: 'skills', skills: [
+      { id: 'c.md', name: 'X', description: 'does a thing' },
+    ]});
+    const row = document.querySelector('#skillList li[data-skill]');
+    row.dispatchEvent(new window.MouseEvent('mouseenter'));
+    assert.ok(!document.getElementById('svcTip').classList.contains('hide'));
+    row.dispatchEvent(new window.MouseEvent('mouseleave'));
+    assert.ok(document.getElementById('svcTip').classList.contains('hide'));
+  }));
+});

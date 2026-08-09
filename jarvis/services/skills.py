@@ -71,6 +71,9 @@ def parse_skill(path: str, content: str) -> dict | None:
         "id": path,
         "name": name,
         "icon": meta.get("icon") or None,
+        # One plain sentence, shown on hover in the HUD so you can check what a
+        # button will do before pressing it.
+        "description": meta.get("description") or None,
         "schedule": meta.get("schedule") or None,
         "output": meta.get("output") or None,
         "prompt": _section(body, "## Prompt"),
@@ -240,7 +243,8 @@ async def run(hub, interval: float = 30.0):
         try:
             skills = await asyncio.to_thread(list_skills)
             summary = [
-                {"id": s["id"], "name": s["name"], "icon": s["icon"], "schedule": s["schedule"]}
+                {"id": s["id"], "name": s["name"], "icon": s["icon"],
+                 "schedule": s["schedule"], "description": s["description"]}
                 for s in skills
             ]
             if summary != last_summary:
