@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -7,7 +8,6 @@ from jarvis import config
 from jarvis.hub import ConnectionHub
 from jarvis.services import brain, vitals, ears, vault, voice, boot, gcal
 
-app = FastAPI()
 hub = ConnectionHub()
 
 # The event loop holds only *weak* references to tasks, so a service whose
@@ -23,7 +23,6 @@ def _spawn(coro):
     return task
 
 
-@app.on_event("startup")
 async def _startup():
     _spawn(vitals.run(hub))
     _spawn(ears.run(hub))
@@ -35,7 +34,7 @@ async def _startup():
     # Session-start: read the vault, then greet (vault CLAUDE.md protocol).
     _spawn(boot.run(hub))
 
-@app.on_event("shutdown")
+
 async def _shutdown():
     # Stop the services before the clients: a service mid-broadcast against a
     # closing hub would raise into its own task on the way down.
@@ -44,6 +43,22 @@ async def _shutdown():
     if _service_tasks:
         await asyncio.gather(*_service_tasks, return_exceptions=True)
     await hub.close()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    """Start the services, then tear them down.
+
+    Replaces @app.on_event, which FastAPI deprecated and will eventually
+    remove. Keeping _startup/_shutdown as plain functions means the tests can
+    still drive either half directly.
+    """
+    await _startup()
+    yield
+    await _shutdown()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
 app.mount("/js", StaticFiles(directory=config.STATIC / "js"), name="js")

@@ -95,6 +95,11 @@ def test_is_known_path_guard(monkeypatch):
     """The websocket handler trusts this before ever touching disk: a path
     that never showed up in a vault listing must be rejected."""
     monkeypatch.setattr(vault, "_known_paths", {"A.md", "01 Preferences/About Mackenzie.md"})
+    # A miss re-lists the vault, which would otherwise be a live HTTP call to
+    # whatever Obsidian happens to be running -- making the result depend on
+    # the developer's machine rather than on the code under test.
+    monkeypatch.setattr(vault, "list_files",
+                        lambda *a, **k: ["A.md", "01 Preferences/About Mackenzie.md"])
 
     assert vault.is_known_path("A.md") is True
     assert vault.is_known_path("../../etc/passwd") is False

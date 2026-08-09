@@ -138,11 +138,21 @@ def test_ask_streams_deltas_and_closes(monkeypatch):
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
 
+    # ask() speaks its reply. Left unpatched this test made a real ElevenLabs
+    # call on every run -- billed, slow, and dependent on the key being set.
+    async def no_speak(hub, text):
+        pass
+    monkeypatch.setattr(brain.voice, "speak", no_speak)
+
     hub = FakeHub()
     reply = asyncio.run(brain.ask(hub, "hi"))
 
     assert reply == "hello"
-    assert hub.messages[-1]["done"] is True
+    # The chat stream must be closed. Asserted by searching rather than by
+    # taking the last message: other services broadcast around it, and
+    # position is not what this test is about.
+    chat = [m for m in hub.messages if m.get("type") == "chat"]
+    assert chat[-1]["done"] is True
     assert not any(brain.ERROR_REPLY in m.get("delta", "") for m in hub.messages)
 
 
