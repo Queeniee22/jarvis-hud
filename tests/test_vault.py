@@ -242,7 +242,9 @@ def test_read_note_meta_survives_a_note_with_no_stat(monkeypatch):
 
     monkeypatch.setattr(vault.requests, "get", lambda *a, **k: FakeResp())
     meta = vault.read_note_meta("A.md")
-    assert meta == {"links": [], "mtime": 0}
+    assert meta["links"] == []
+    assert meta["mtime"] == 0, "a note with no stat must not break the scan"
+    assert meta["words"] == 3, "word count comes from the content, not from stat"
 
 
 async def test_vault_panel_reports_the_most_recently_edited_note(monkeypatch):
