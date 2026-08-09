@@ -185,6 +185,10 @@ async def ask(hub, text: str, source: str = "text"):
 
     reply = ""
     proc = None
+    # Bound before the try: if create_subprocess_exec itself fails, the
+    # finally block still runs and would otherwise hit UnboundLocalError.
+    stderr_task = None
+    cancelled = False
     claude_path = shutil.which("claude") or "claude"
     try:
         global _session_id
@@ -237,6 +241,10 @@ async def ask(hub, text: str, source: str = "text"):
                         "detail": f"claude exited {proc.returncode}",
                     })
     except asyncio.CancelledError:
+        # Re-raising alone left the `claude` process running: cancellation
+        # skips the kill in the Exception branch below, so every cancelled
+        # turn orphaned a Node process for the life of the machine.
+        cancelled = True
         raise
     except Exception:
         # ask() is fired off with create_task, so an escaping exception
@@ -255,18 +263,32 @@ async def ask(hub, text: str, source: str = "text"):
                 "detail": "ask failed",
             })
     finally:
-        await emit({"type": "chat", "role": "jarvis", "delta": "", "done": True})
-        spoken, question, options = parse_ask(reply)
-        if question:
-            # Render clickable cards in the HUD so Mackenzie can answer with
-            # a click instead of having to say the option back.
-            await hub.broadcast({
-                "type": "ask", "question": question, "options": options,
-            })
-        if spoken:
-            asyncio.create_task(voice.speak(hub, spoken))
-        elif voice_only:
-            # A spoken turn writes nothing to the panel, so a failure with no
-            # reply would be pure silence. Say the error out loud instead.
-            asyncio.create_task(voice.speak(hub, ERROR_REPLY))
+        # Always reclaim the subprocess and the stderr reader, whichever way
+        # we leave -- success, failure or cancellation.
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass  # already gone
+        if stderr_task is not None and not stderr_task.done():
+            stderr_task.cancel()
+
+        # Guarded rather than an early `return`: returning from a finally
+        # block swallows the exception on its way out, which turned a
+        # cancelled turn into a silent normal return and broke shutdown.
+        if not cancelled:
+            await emit({"type": "chat", "role": "jarvis", "delta": "", "done": True})
+            spoken, question, options = parse_ask(reply)
+            if question:
+                # Render clickable cards in the HUD so Mackenzie can answer
+                # with a click instead of having to say the option back.
+                await hub.broadcast({
+                    "type": "ask", "question": question, "options": options,
+                })
+            if spoken:
+                asyncio.create_task(voice.speak(hub, spoken))
+            elif voice_only:
+                # A spoken turn writes nothing to the panel, so a failure with
+                # no reply would be pure silence. Say the error out loud.
+                asyncio.create_task(voice.speak(hub, ERROR_REPLY))
     return reply

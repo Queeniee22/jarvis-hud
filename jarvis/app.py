@@ -10,20 +10,39 @@ from jarvis.services import brain, vitals, ears, vault, voice, boot, gcal
 app = FastAPI()
 hub = ConnectionHub()
 
+# The event loop holds only *weak* references to tasks, so a service whose
+# task object is discarded can be garbage-collected mid-run and simply stop.
+# Keeping them here also gives shutdown something to cancel.
+_service_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _service_tasks.add(task)
+    task.add_done_callback(_service_tasks.discard)
+    return task
+
+
 @app.on_event("startup")
 async def _startup():
-    asyncio.create_task(vitals.run(hub))
-    asyncio.create_task(ears.run(hub))
-    asyncio.create_task(vault.run(hub))
-    asyncio.create_task(gcal.run(hub))
+    _spawn(vitals.run(hub))
+    _spawn(ears.run(hub))
+    _spawn(vault.run(hub))
+    _spawn(gcal.run(hub))
     # Synthesize the "thinking" fillers up front so the first one plays
     # instantly instead of paying a TTS fetch mid-pause.
-    asyncio.create_task(voice.prewarm_acks())
+    _spawn(voice.prewarm_acks())
     # Session-start: read the vault, then greet (vault CLAUDE.md protocol).
-    asyncio.create_task(boot.run(hub))
+    _spawn(boot.run(hub))
 
 @app.on_event("shutdown")
 async def _shutdown():
+    # Stop the services before the clients: a service mid-broadcast against a
+    # closing hub would raise into its own task on the way down.
+    for task in list(_service_tasks):
+        task.cancel()
+    if _service_tasks:
+        await asyncio.gather(*_service_tasks, return_exceptions=True)
     await hub.close()
 
 app.mount("/css", StaticFiles(directory=config.STATIC / "css"), name="css")
@@ -42,6 +61,31 @@ async def _no_cache(request, call_next):
     response.headers["Cache-Control"] = "no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     return response
+
+
+async def _open_note(path: str):
+    # The guard re-lists the vault on a miss, so it can block; it belongs on
+    # this task rather than in the websocket receive loop.
+    if not path or not await asyncio.to_thread(vault.is_known_path, path):
+        await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
+        return
+    try:
+        content = await asyncio.to_thread(vault.read_note, path)
+        await hub.broadcast({"type": "note", "path": path, "content": content})
+    except Exception as e:
+        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
+
+
+async def _save_note(path: str, content):
+    if not path or content is None or not await asyncio.to_thread(vault.is_known_path, path):
+        await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
+        return
+    try:
+        await asyncio.to_thread(vault.write_note, path, content)
+        await hub.broadcast({"type": "note_saved", "path": path})
+    except Exception as e:
+        # Never log note content -- only the path and the error string.
+        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
 
 
 @app.get("/")
@@ -70,14 +114,14 @@ async def ws(sock: WebSocket):
                 text = (msg.get("text") or "").strip()
                 if text:
                     await hub.broadcast({"type": "chat", "role": "you", "delta": text, "done": True})
-                    asyncio.create_task(brain.ask(hub, text))
+                    _spawn(brain.ask(hub, text))
             elif msg.get("type") == "choice":
                 # An option card was clicked. Continue the spoken conversation
                 # as if he had said it, so the answer comes back by voice.
                 picked = (msg.get("text") or "").strip()
                 if picked:
                     await hub.broadcast({"type": "heard", "text": picked})
-                    asyncio.create_task(brain.ask(hub, picked, source="voice"))
+                    _spawn(brain.ask(hub, picked, source="voice"))
             elif msg.get("type") == "ptt":
                 active = bool(msg.get("value"))
                 if active and voice.is_speaking():
@@ -91,30 +135,12 @@ async def ws(sock: WebSocket):
             elif msg.get("type") == "tab":
                 pass  # purely client-side; ignore server-side
             elif msg.get("type") == "note_open":
-                path = (msg.get("path") or "").strip()
-                if not path or not vault.is_known_path(path):
-                    # Guard against a malformed/malicious path -- never hand
-                    # an arbitrary string to the vault REST client.
-                    await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
-                else:
-                    try:
-                        content = await asyncio.to_thread(vault.read_note, path)
-                        await hub.broadcast({"type": "note", "path": path, "content": content})
-                    except Exception as e:
-                        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
+                # Spawned, not awaited: a vault round-trip inline here would
+                # stall this loop, and the next message might be the
+                # push-to-talk release. Reading a note must not delay speech.
+                _spawn(_open_note((msg.get("path") or "").strip()))
             elif msg.get("type") == "note_save":
-                path = (msg.get("path") or "").strip()
-                content = msg.get("content")
-                if not path or not vault.is_known_path(path) or content is None:
-                    await hub.broadcast({"type": "note_error", "path": path, "detail": "unknown note path"})
-                else:
-                    try:
-                        await asyncio.to_thread(vault.write_note, path, content)
-                        await hub.broadcast({"type": "note_saved", "path": path})
-                    except Exception as e:
-                        # Never log note content -- only the path and the
-                        # HTTP/library error string end up anywhere.
-                        await hub.broadcast({"type": "note_error", "path": path, "detail": str(e)})
+                _spawn(_save_note((msg.get("path") or "").strip(), msg.get("content")))
     except WebSocketDisconnect:
         pass
     finally:

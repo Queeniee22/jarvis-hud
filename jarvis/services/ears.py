@@ -208,6 +208,20 @@ async def run(hub):
         await hub.broadcast({"type": "status", "service": "ears", "state": "offline", "detail": f"device: {e}"})
         return
 
+    try:
+        await _capture_loop(hub, q, model, loop)
+    finally:
+        # The loop only ever exits by cancellation (shutdown). Without this
+        # the PortAudio stream stays open and keeps the microphone claimed
+        # for the life of the process.
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            log.debug("ears: input stream already closed")
+
+
+async def _capture_loop(hub, q, model, loop):
     buffer = []
     while True:
         item = await q.get()
