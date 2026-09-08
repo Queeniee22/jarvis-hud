@@ -3,7 +3,8 @@
 Two runtimes means two runners; this is the one command that covers the
 whole project so neither half gets forgotten.
 
-    .venv/Scripts/python run_tests.py
+    .venv/Scripts/python run_tests.py     # Windows
+    .venv/bin/python run_tests.py         # macOS
 """
 import subprocess
 import sys

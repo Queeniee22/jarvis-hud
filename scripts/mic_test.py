@@ -3,9 +3,11 @@
 Run it, then talk. If the bar moves when you speak, the mic works and the
 problem is downstream. If it stays flat while you talk, the mic itself is
 muted or its input level is zero (check the physical mute button on the
-Fifine and Windows > Settings > Sound > Input > volume).
+Fifine, then Windows > Settings > Sound > Input > volume, or on macOS
+System Settings > Sound > Input and Privacy & Security > Microphone).
 
-    .venv/Scripts/python scripts/mic_test.py
+    .venv/Scripts/python scripts/mic_test.py     # Windows
+    .venv/bin/python scripts/mic_test.py         # macOS
 """
 import sys
 import time
