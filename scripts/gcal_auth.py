@@ -4,7 +4,8 @@ Run it once, sign in with the browser window it opens, and it saves
 token.json in the repo root. jarvis.services.gcal reads that token on every
 poll after that -- this script never runs as part of the app itself.
 
-    .venv/Scripts/python scripts/gcal_auth.py
+    .venv/Scripts/python scripts/gcal_auth.py     # Windows
+    .venv/bin/python scripts/gcal_auth.py         # macOS
 """
 import sys
 

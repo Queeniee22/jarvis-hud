@@ -3,7 +3,8 @@
 Exercises the exact path the HUD uses, so whatever it prints is what the
 HUD would have done with the same audio.
 
-    .venv/Scripts/python scripts/ears_test.py
+    .venv/Scripts/python scripts/ears_test.py     # Windows
+    .venv/bin/python scripts/ears_test.py         # macOS
 """
 import time
 

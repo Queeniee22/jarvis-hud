@@ -2,8 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "jarvis-hud",
-      "runtimeExecutable": ".venv/Scripts/python",
+      "name": "jarvis-hud-windows",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["run.py"],
+      "port": 8770
+    },
+    {
+      "name": "jarvis-hud-mac",
+      "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["run.py"],
       "port": 8770
     }
